@@ -125,6 +125,11 @@ class _MetaConfigObj(type):
             elif store_location == cls.StoreLocation.MediaFolder:
                 with open(cls.MediaConfigJsonFile(), "w") as f:
                     json.dump(config_obj, f)
+            elif store_location == _MetaConfigObj.StoreLocation.Profile:
+                if _MetaConfigObj.IsAnki21():
+                    mw.pm.profile.update(config_obj)
+                else:
+                    mw.pm.meta.update(config_obj)
         except:
             super(_MetaConfigObj, cls).__setattr__(key, value)
 
@@ -226,6 +231,13 @@ class UserConfig(metaclass=_MetaConfigObj):
         ("Wiki", "https://en.wikipedia.org/wiki/?search=%s"),
     ]
     preload = True
+
+
+class ProfileConfig(metaclass=_MetaConfigObj):
+    class Meta:
+        __StoreLocation__ = _MetaConfigObj.StoreLocation.Profile
+
+    is_first_webq_run = True
 
 
 # endregion
@@ -1008,6 +1020,26 @@ class WebQryAddon:
         self.dock.setVisible(True)
 
     def ensure_dock(self):
+        if ProfileConfig.is_first_webq_run:
+            QMessageBox.warning(
+                mw, "Web Query", """
+                <p>
+                    <b>Welcome !</b>
+                </p>
+                <p>This is your first run of <EM><b>Web Query</b></EM>, please read below items carefully:</p>
+                <ul>
+                    <li>
+                        Choose proper <em>[Image]</em> field in "Options" button in right dock widget 
+                        BEFORE YOU SAVING ANY IMAGES, by default its set to the 2nd
+                        field of your current note.
+                    </li>
+                    <li>
+                        You are able to change the <em>[Query]</em> field in "Options" also, 
+                        which is set to the 1st field by default.
+                    </li>
+                </ul>
+                """)
+            ProfileConfig.is_first_webq_run = False
         if not self.dock:
             self.dock = self.add_dock(_('Web Query'), )
             if not self.dock:
