@@ -149,21 +149,24 @@ class _MetaConfigObj(type):
             with open(json_file, 'r') as ff:
                 return json.load(ff)
 
+        disk_config_obj = {}
         if store_location == _MetaConfigObj.StoreLocation.Profile:
             if _MetaConfigObj.IsAnki21():
-                return mw.pm.profile
+                disk_config_obj = mw.pm.profile
             else:
-                return mw.pm.meta
+                disk_config_obj = mw.pm.meta
         elif store_location == _MetaConfigObj.StoreLocation.AddonFolder:
             # ensure json file
             obj = _get_json_dict(_MetaConfigObj.ConfigJsonFile())
 
             if _MetaConfigObj.IsAnki21():
-                return mw.addonManager.getConfig(_MetaConfigObj.AddonModelName())
+                disk_config_obj = mw.addonManager.getConfig(_MetaConfigObj.AddonModelName())
             else:
-                return obj
+                disk_config_obj = obj
         elif store_location == _MetaConfigObj.StoreLocation.MediaFolder:
-            return _get_json_dict(_MetaConfigObj.MediaConfigJsonFile())
+            disk_config_obj = _get_json_dict(_MetaConfigObj.MediaConfigJsonFile())
+        cls.config_dict.update(disk_config_obj)
+        return cls.config_dict
 
     @staticmethod
     def IsAnki21():
@@ -1068,5 +1071,6 @@ class WebQryAddon:
             self.card.flush()
             tooltip("Saved image to current card: {}".format(fn), 5000)
         # self.reviewer.show()
+
 
 WebQryAddon()
