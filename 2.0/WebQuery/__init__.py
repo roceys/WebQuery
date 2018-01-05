@@ -227,6 +227,8 @@ class AddonUpdater(QThread):
     """
     Class for auto-check and upgrade source codes, uses part of the source codes from ankiconnect.py : D
     """
+    update_success = pyqtSignal(bool)
+    new_version = pyqtSignal(bool)
 
     def __init__(self, parent,
                  addon_name,
@@ -294,50 +296,53 @@ class AddonUpdater(QThread):
     def _make_data_string(data):
         return data.decode('utf-8')
 
-    def upgrade(self):
-        response = QMessageBox.question(
+    def ask_update(self):
+        return QMessageBox.question(
             self.parent(),
             self.addon_name,
             'Upgrade to the latest version?',
             QMessageBox.Yes | QMessageBox.No
         )
 
-        if response == QMessageBox.Yes:
-            try:
-                data = self._download(self.source_zip)
-                if data is None:
-                    QMessageBox.critical(self.parent(),
-                                         self.addon_name, 'Failed to download latest version.')
-                else:
-                    zip_path = os.path.join(self.local_dir,
-                                            uuid4().hex + ".zip")
-                    with open(zip_path, 'wb') as fp:
-                        fp.write(data)
+    def alert_update_failed(self):
+        QMessageBox.critical(self.parent(),
+                             self.addon_name, 'Failed to download latest version.')
 
-                    # unzip
-                    from zipfile import ZipFile
-                    zip_file = ZipFile(zip_path)
-                    if not os.path.isdir(self.local_dir):
-                        os.makedirs(self.local_dir, exist_ok=True)
-                    for names in zip_file.namelist():
-                        zip_file.extract(names, self.local_dir)
-                    zip_file.close()
+    def alert_update_success(self):
+        QMessageBox.information(self.parent(), self.addon_name,
+                                'Upgraded to the latest version, please restart Anki.')
 
-                    # remove zip file
-                    os.remove(zip_path)
+    def upgrade(self):
+        try:
+            data = self._download(self.source_zip)
+            if data is None:
+                QMessageBox.critical(self.parent(),
+                                     self.addon_name, 'Failed to download latest version.')
+            else:
+                zip_path = os.path.join(self.local_dir,
+                                        uuid4().hex + ".zip")
+                with open(zip_path, 'wb') as fp:
+                    fp.write(data)
 
-                    QMessageBox.information(self.parent(), self.addon_name,
-                                            'Upgraded to the latest version, please restart Anki.')
+                # unzip
+                from zipfile import ZipFile
+                zip_file = ZipFile(zip_path)
+                if not os.path.isdir(self.local_dir):
+                    os.makedirs(self.local_dir, exist_ok=True)
+                for names in zip_file.namelist():
+                    zip_file.extract(names, self.local_dir)
+                zip_file.close()
 
-                    return True
-            except:
-                QMessageBox.critical(self.parent(), self.addon_name,
-                                     'Upgraded operation failed!')
-            return False
+                # remove zip file
+                os.remove(zip_path)
+
+                self.update_success.emit(True)
+        except:
+            self.update_success.emit(False)
 
     def run(self):
         if self.has_new_version:
-            self.upgrade()
+            self.new_version.emit(True)
 
 
 # endregion
@@ -650,6 +655,80 @@ class CaptureOptionButton(QPushButton):
         SyncConfig.auto_save = True if checked else False
 
 
+class UpgradeButton(QPushButton):
+
+    def __init__(self, parent):
+        super(UpgradeButton, self).__init__(parent)
+        pix = QPixmap()
+        pix.loadFromData(bytearray(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x10\x00\x00\x00\x10'
+                                   b'\x08\x06\x00\x00\x00\x1f\xf3\xffa\x00\x00\x02\xb6IDATx^U'
+                                   b'\xcb\xdf\x8bUU\x18\xc7\xe1\xcf\xbb\xf6\xda{w\xce\xd9s\x8e3v'
+                                   b'\x1a\xc4\xb4)db\x18R\xec\x17\x06\x11H\x84\x97\xe1M\xa0\x12\xd1'
+                                   b'\xcd\x14\x98?\x12\x9c\x9bp\xbc\xe8\x0f\xb0D\xbc0\xa1 B\x8dB'
+                                   b'\x98\x02\xc5\x1b\xd3r\x0c,\xa2\x8b\xca\x10\x0f\xd3 \x88'
+                                   b'\x03\xce\x19l\xe6\xcc9{\xaf\xb5\xde\x86\xb3\xa1\xf2\x81'
+                                   b'\xef\xcd\xfb\xf2\x91\xa5\xe9\x97\xf9?\x11\xc1\xc6\x86\x99K'
+                                   b'\xad\xc7\xb2\xcct\x8a_\xfe"\x1d6\xb5\xda\xf6=\xf7\xf0KH\xf0'
+                                   b"\x80\x02\x02\x80u\xf7\xef\xf20\xc5\x8b>\xdb\x1c\xae\x9e\xa9Xw'"
+                                   b'\x1f\x80\xb5\x9b\x92\xc7\xaf\\\xfdaG,n\xd6\xa0\x00h9\xec\xad'
+                                   b'\x999\x04E(i\x80\x90\x87\xa9\xa7\xf7\xbc>\xea\xdbs\xa3\x8b7'
+                                   b'\xa0\xb1\x06Lk\xf6h\x1c\xf3\xb61e\x18\x028\x15\xec\x90/X'
+                                   b'\xaa$\x18\x01\xe9?\x14\xe7\xf1\x95*\xe4\xf5-d\x9b\xff$\xc9\x97'
+                                   b'QD\xc4\x82\x18!(8`\xfbS\x1e\x83\x81\r\xe3\x8fB\xee\xc1{\xc4y\xc8'
+                                   b'\x837\xbd\x07\xd4\xb6\x9d\xa6\xf9\xdew\xd0SB\x11\xbcz\xc5{\xa5'
+                                   b'\xc8\x95WF}?\xb1\xaa\xa0AqbH\xba\x0eQEV@{\x8b\x94\nH'
+                                   b'\xc1\x15\xe8\xeaP\xa3\xaco(.@P0\x94\x10\x81^G\xf1\x058\x87#\xef'
+                                   b'\xd0\x17\xa5P\x11\\\x8e+\nedP\xfb\xa1*(`\x8d\x011\x94\x14\xda\xf7'
+                                   b'\x01O\xdb\x86.%\x03NX\xeeh{\xecI\xf0\x014\x94\x8d\x8d\xc0\xa6)M'
+                                   b'\x1b\xe9n\x82\xbe\xebs\xee\x15]\xe6\x93a3N\xe8\xd1\x17W\xe9'
+                                   b'\xcd\x05\xc6\x1a\xac[\xe9q31\x0c\x11\xd1L\x12\xdeZ\xddy\x8e'
+                                   b'>\xc1\xd0\xf7\x07\x87?\xff\xf5\x83A\xd5\xd6N\xd5Kc\xaa_oP=U\xd3'
+                                   b'\xe2\xdc\x88\xe6\x1f\xa2:\x89\xea\xf1H\xf5\x8b\x01\xd5o'
+                                   b'\x1b\xda\xda+z\xfa%\xcel\x14\x9a6KYHSy\xf3\xf6\xb5\xf6\x82_\xbc'
+                                   b'\xb8\x7f\xeb\xc4s\xb00\x0f\xdd\x9cn=\xc5\xfb\x88j\xc7\x13\xff\xed'
+                                   b'![\xe2\xe6y\x98\xf9I?\xa9\xafebK\r\x8c5`\xad\xf0HE\x0eL_X9v'
+                                   b'\xfd\xe3\x1b\xd0\x8c!\x8e\xc8\xde\xf8\x83\xc6T\xc1\xf2"'
+                                   b'\x10\xc1\xecu\xe5\xe4\xb4\x9e\xacU\x98Hb\xa8F`\x10\x10\x11\x92'
+                                   b'\x18\x063\x0e\x1d\xf9\xb2\xf7\xd1\x8f\x9f\xceCV\x10\xae'
+                                   b'\xbc\xca\x83\xe3k\x88\x07\xe0\xf2\x0c\xec\xfc\x8c\x13\xcd\x8c'
+                                   b'\xbdi\x0cF\xcaY\x00\x04\xc4@\x92\x08\x1b\xeb\xbc\xbf\xfbl(\xce'
+                                   b'\xe5\x1c~\xe1\x99\xcb\xc8\x1c|\xf3;\xec\xba\xc6\x89]'
+                                   b'\x83\xec\xab\x961\x08}\x86\x12\x02D\x06\xb2\x046\xd7\x99|\xf1+'
+                                   b'\x8e\xfd\xfc\x1b\\m\xf5\xe3S\xc0\xbez\x02\x91\x80\x08'
+                                   b'\xff\xb2\x86\xff\x88\x94\x87F\x02\xafe\x1cz\xfe,u\xa0\x02\xbc3'
+                                   b'\x1e\x83-\xe3\x87\xfc\x03.\x87/\xdd\x8a[\xdf\x84\x00\x00\x00\x00I'
+                                   b'END\xaeB`\x82'))
+        icon = QIcon(pix)
+        self.setIcon(icon)
+        self.setToolTip("There's new version, please click here to download")
+        self.updator = AddonUpdater(
+            self,
+            "Web Query",
+            "https://raw.githubusercontent.com/upday7/WebQuery/dev-check_new_version/2.0/webquery.py",
+            "https://github.com/upday7/WebQuery/blob/dev-check_new_version/2.0.zip?raw=true",
+            mw.pm.addonFolder(),
+            WebQryAddon.version
+        )
+        self.updator.new_version.connect(self.on_addon_new_version)
+        self.updator.update_success.connect(self.on_addon_updated)
+        self.setVisible(False)
+        self.clicked.connect(self.on_clicked)
+
+    def on_addon_new_version(self):
+        self.setVisible(True)
+
+    def on_addon_updated(self, success):
+        if success:
+            self.updator.alert_update_success()
+            self.setVisible(False)
+        else:
+            self.updator.alert_update_failed()
+
+    def on_clicked(self):
+        if self.updator.ask_update() == QMessageBox.Yes:
+            self.updator.upgrade()
+
+
 class ResizeButton(QPushButton):
     def __init__(self, parent, dock_widget):
         super(ResizeButton, self).__init__("<>", parent)
@@ -720,10 +799,14 @@ class WebQueryWidget(QWidget):
         dock_widget.setFixedWidth(SyncConfig.doc_size[0])
         self.resize_btn = ResizeButton(self, dock_widget)
 
+        self.update_btn = UpgradeButton(self)
+        self.update_btn.setMaximumWidth(20)
+
         self.capture_option_btn = CaptureOptionButton(self)
         self.capture_option_btn.setMaximumWidth(100)
         self.img_btn_grp_ly = QHBoxLayout()
         self.img_btn_grp_ly.addWidget(self.resize_btn)
+        self.img_btn_grp_ly.addWidget(self.update_btn)
         self.img_btn_grp_ly.addSpacing(5)
         self.img_btn_grp_ly.addWidget(self.capture_option_btn)
         self.img_btn_grp_ly.addWidget(self.return_button)
@@ -921,6 +1004,7 @@ class ModelDialog(Models):
 
 
 class WebQryAddon:
+    version = ''
 
     def __init__(self, version):
         self.shown = False
@@ -928,7 +1012,7 @@ class WebQryAddon:
         # region variables
         self.current_index = 0
         self._first_show = True
-        self.version = version
+        WebQryAddon.version = version
 
         # endregion
 
@@ -943,12 +1027,14 @@ class WebQryAddon:
         addHook("reviewCleanup", self.hide)
         addHook("profileLoaded", self.profileLoaded)
 
+        self._updator = None
         self.init_menu()
 
     def cur_tab_index_changed(self, tab_index):
         self.current_index = tab_index
         if not UserConfig.preload:
             self.show_widget()
+        self.web.update_btn.updator.start()
 
     @property
     def page(self):
@@ -973,15 +1059,6 @@ class WebQryAddon:
         mw.form.actionNoteTypes.triggered.disconnect()
         mw.form.actionNoteTypes.triggered.connect(onNoteTypes)
         # eng region
-
-        AddonUpdater(
-            mw,
-            "Web Query",
-            "https://raw.githubusercontent.com/upday7/WebQuery/dev-check_new_version/2.0/webquery.py",
-            "https://github.com/upday7/WebQuery/blob/dev-check_new_version/2.0.zip?raw=true",
-            mw.pm.addonFolder(),
-            self.version
-        ).start()
 
     # endregion
     @property
@@ -1155,6 +1232,7 @@ class WebQryAddon:
             return
         self._display_widget.setVisible(True)
         if self._first_show:
+            self.web.update_btn.updator.start()
             self.web.reload()
             self._first_show = False
         if not UserConfig.preload:
