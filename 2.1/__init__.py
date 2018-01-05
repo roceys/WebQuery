@@ -401,6 +401,9 @@ class OptionsMenu(QMenu):
         self.qry_field_action_grp = None
 
         # setup option actions
+        self.setup_all()
+
+    def setup_all(self):
         self.setup_option_actions()
         self.setup_image_field([])
         self.setup_query_field([])
@@ -824,15 +827,24 @@ class WebQryAddon:
         self.pages = []
         self.webs = []
         self._display_widget = None
+        self.main_menu = None
 
+        # Menu setup
+        def _clean_menu():
+            if self.main_menu:
+                self.main_menu.setEnabled(False)
+
+        _clean_menu()
+        addHook("showQuestion", self.init_menu)
+        addHook("deckClosing", _clean_menu)
+        addHook("reviewCleanup", _clean_menu)
+
+        # others
         addHook("showQuestion", self.start_query)
         addHook("showAnswer", self.show_widget)
         addHook("deckClosing", self.hide)
         addHook("reviewCleanup", self.hide)
         addHook("profileLoaded", self.profileLoaded)
-
-        self.options_menu = None
-        self.init_menu()
 
     def cur_tab_index_changed(self, tab_index):
         self.current_index = tab_index
@@ -848,16 +860,18 @@ class WebQryAddon:
         return self.webs[self.current_index]
 
     def init_menu(self):
-        main_menu = QMenu("Web Query", mw.form.menuTools)
-        action = QAction(mw.form.menuTools)
-        action.setText("Toggle Web Query")
-        action.setShortcut(QKeySequence("ALT+W"))
-        main_menu.addAction(action)
-        action.triggered.connect(self.toggle)
-        self.options_menu = OptionsMenu(main_menu)
-        main_menu.addMenu(self.options_menu)
-
-        mw.form.menuTools.addMenu(main_menu)
+        if self.main_menu:
+            self.main_menu.setEnabled(True)
+        else:
+            self.main_menu = QMenu("WebQuery", mw.form.menuTools)
+            action = QAction(self.main_menu)
+            action.setText("Toggle WebQuery")
+            action.setShortcut(QKeySequence("ALT+W"))
+            self.main_menu.addAction(action)
+            action.triggered.connect(self.toggle)
+            self.options_menu = OptionsMenu(self.main_menu)
+            self.main_menu.addMenu(self.options_menu)
+            mw.form.menuTools.addMenu(self.main_menu)
 
     # region replace mw onNoteTypes
     def profileLoaded(self):
