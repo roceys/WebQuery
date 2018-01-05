@@ -189,8 +189,10 @@ class _MetaConfigObj(type):
 
 try:
     import urllib2 as web
+    from urllib import urlretrieve
 except ImportError:
     from urllib import request as web
+    from urllib.request import urlretrieve
 
 
 class AddonUpdater(QThread):
@@ -240,15 +242,20 @@ class AddonUpdater(QThread):
 
     @staticmethod
     def _download(url):
-        try:
-            resp = web.urlopen(url, timeout=10)
-        except web.URLError:
-            return None
+        if url.lower().endswith(".py"):
+            try:
+                resp = web.urlopen(url, timeout=10)
+            except web.URLError:
+                return None
 
-        if resp.code != 200:
-            return None
+            if resp.code != 200:
+                return None
 
-        return resp.read()
+            return resp.read()
+        else:
+            with open(urlretrieve(url)[0],"rb") as f:
+                b = f.read()
+            return b
 
     @staticmethod
     def _make_version_int(ver_string):
@@ -275,7 +282,7 @@ class AddonUpdater(QThread):
                                          self.addon_name, 'Failed to download latest version.')
                 else:
                     zip_path = os.path.join(self.local_dir,
-                                            os.path.split(self.source_zip)[1])
+                                            uuid4().hex+".zip")
                     with open(zip_path, 'wb') as fp:
                         fp.write(data)
 
@@ -917,12 +924,12 @@ class WebQryAddon:
         mw.form.actionNoteTypes.triggered.connect(onNoteTypes)
         # eng region
 
-        from ..webquery import __version__
+        from webquery import __version__
         AddonUpdater(
             mw,
             "Web Query",
             "https://raw.githubusercontent.com/upday7/WebQuery/dev-check_new_version/2.0/webquery.py",
-            "https://github.com/upday7/WebQuery/blob/dev-check_new_version/2.0/2.0.zip",
+            "https://github.com/upday7/WebQuery/blob/dev-check_new_version/2.0/2.0.zip?raw=true",
             mw.pm.addonFolder(),
             __version__
         ).start()
