@@ -18,7 +18,7 @@
 
 from anki.hooks import addHook
 
-__version__ = '1.2.2'
+__version__ = '1.2.21'
 
 
 # USER PLEASE READ

@@ -311,33 +311,50 @@ class AddonUpdater(QThread):
         QMessageBox.information(self.parent(), self.addon_name,
                                 'Upgraded to the latest version, please restart Anki.')
 
+    def upgrade_using_anki(self):
+        addon_code = '627484806'
+        if _MetaConfigObj.IsAnki21():
+            mw.addonManager.downloadIds([addon_code, ])
+        else:
+            from aqt.downloader import download
+            ret = download(mw, addon_code)
+            if not ret:
+                return
+            data, fname = ret
+            mw.addonManager.install(data, fname)
+            mw.progress.finish()
+
     def upgrade(self):
         try:
-            data = self._download(self.source_zip)
-            if data is None:
-                QMessageBox.critical(self.parent(),
-                                     self.addon_name, 'Failed to download latest version.')
-            else:
-                zip_path = os.path.join(self.local_dir,
-                                        uuid4().hex + ".zip")
-                with open(zip_path, 'wb') as fp:
-                    fp.write(data)
-
-                # unzip
-                from zipfile import ZipFile
-                zip_file = ZipFile(zip_path)
-                if not os.path.isdir(self.local_dir):
-                    os.makedirs(self.local_dir, exist_ok=True)
-                for names in zip_file.namelist():
-                    zip_file.extract(names, self.local_dir)
-                zip_file.close()
-
-                # remove zip file
-                os.remove(zip_path)
-
-                self.update_success.emit(True)
+            self.upgrade_using_anki()
+            self.update_success.emit(True)
         except:
-            self.update_success.emit(False)
+            try:
+                data = self._download(self.source_zip)
+                if data is None:
+                    QMessageBox.critical(self.parent(),
+                                         self.addon_name, 'Failed to download latest version.')
+                else:
+                    zip_path = os.path.join(self.local_dir,
+                                            uuid4().hex + ".zip")
+                    with open(zip_path, 'wb') as fp:
+                        fp.write(data)
+
+                    # unzip
+                    from zipfile import ZipFile
+                    zip_file = ZipFile(zip_path)
+                    if not os.path.isdir(self.local_dir):
+                        os.makedirs(self.local_dir, exist_ok=True)
+                    for names in zip_file.namelist():
+                        zip_file.extract(names, self.local_dir)
+                    zip_file.close()
+
+                    # remove zip file
+                    os.remove(zip_path)
+
+                    self.update_success.emit(True)
+            except:
+                self.update_success.emit(False)
 
     def run(self):
         if self.has_new_version:
