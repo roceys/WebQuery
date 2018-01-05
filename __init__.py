@@ -83,18 +83,6 @@ class _MetaConfigObj(type):
 
         mcs.attributes = attributes  # attributes that is the configuration items
 
-        # get default configuration keys and values from class properties
-        if meta.__StoreLocation__ == mcs.StoreLocation.Profile:
-            # load to profile data
-            # noinspection PyUnresolvedReferences
-            addHook('profileLoaded', lambda: c.load_default_profile_var())
-        else:
-            # create config.json file
-            # noinspection PyUnresolvedReferences
-            addHook('profileLoaded', lambda: c.load_default_json())
-            # reload to profile database
-            # addHook('profileLoaded', lambda: c.reload_config_values())
-
         return c
 
     def __getattr__(cls, item):
@@ -132,13 +120,6 @@ class _MetaConfigObj(type):
                     mw.pm.meta.update(config_obj)
         except:
             super(_MetaConfigObj, cls).__setattr__(key, value)
-
-    def load_default_json(cls):
-        cls.get_config(cls.metas[cls.__name__])
-
-    def load_default_profile_var(cls):
-        for k, v in cls.config_dict.items():
-            cls.get_config(cls.metas[cls.__name__].__StoreLocation__).setdefault(k, v)
 
     def get_config(cls, store_location):
         """
