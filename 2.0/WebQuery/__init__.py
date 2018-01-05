@@ -35,8 +35,6 @@ items_bytes = bytearray(
 this_addon_folder = os.path.split(__file__)[0]
 webq_model_config_json_file = os.path.join(this_addon_folder, "web_query_model_config.json")
 
-global PROVIDER_URLS
-
 
 # endregion
 
@@ -70,7 +68,8 @@ class _MetaConfigObj(type):
         meta = attributes.get('Meta', type("Meta", (), {}))
         # meta values
         setattr(meta, "config_dict", config_dict)
-        setattr(meta, "__StoreLocation__", getattr(meta, "__StoreLocation__", False))
+        setattr(meta, "__StoreLocation__", getattr(meta, "__StoreLocation__", 0))
+        setattr(meta, "__config_file__", getattr(meta, "__config_file__", "config.json"))
 
         _MetaConfigObj.metas[c.__name__] = meta
         # endregion
@@ -79,6 +78,10 @@ class _MetaConfigObj(type):
             return c
 
         mcs.attributes = attributes  # attributes that is the configuration items
+
+        setattr(c, "media_json_file", mcs.MediaConfigJsonFile("_{}_{}".format(_MetaConfigObj.AddonModelName(),
+                                                                              _MetaConfigObj.metas[
+                                                                                  name].__config_file__).lower()))
 
         return c
 
@@ -108,7 +111,7 @@ class _MetaConfigObj(type):
                     with open(cls.ConfigJsonFile(), "w") as f:
                         json.dump(config_obj, f)
             elif store_location == cls.StoreLocation.MediaFolder:
-                with open(cls.MediaConfigJsonFile(), "w") as f:
+                with open(cls.media_json_file, "w") as f:
                     json.dump(config_obj, f)
             elif store_location == _MetaConfigObj.StoreLocation.Profile:
                 if _MetaConfigObj.IsAnki21():
@@ -128,7 +131,7 @@ class _MetaConfigObj(type):
         def _get_json_dict(json_file):
             if not os.path.isfile(json_file):
                 with open(json_file, "w") as f:
-                    json.dump(cls.attributes['config_dict'], f)
+                    json.dump(cls.config_dict, f)
             with open(json_file, 'r') as ff:
                 return json.load(ff)
 
@@ -147,7 +150,7 @@ class _MetaConfigObj(type):
             else:
                 disk_config_obj = obj
         elif store_location == _MetaConfigObj.StoreLocation.MediaFolder:
-            disk_config_obj = _get_json_dict(_MetaConfigObj.MediaConfigJsonFile())
+            disk_config_obj = _get_json_dict(cls.media_json_file)
         cls.config_dict.update(disk_config_obj)
         return cls.config_dict
 
@@ -161,8 +164,8 @@ class _MetaConfigObj(type):
         return os.path.join(_MetaConfigObj.AddonsFolder(), "config.json")
 
     @staticmethod
-    def MediaConfigJsonFile():
-        return os.path.join(_MetaConfigObj.MediaFolder(), "_{}_config.json".format(_MetaConfigObj.AddonModelName()))
+    def MediaConfigJsonFile(file_nm):
+        return os.path.join(_MetaConfigObj.MediaFolder(), file_nm)
 
     @staticmethod
     def AddonsFolder():
@@ -253,7 +256,7 @@ class AddonUpdater(QThread):
 
             return resp.read()
         else:
-            with open(urlretrieve(url)[0],"rb") as f:
+            with open(urlretrieve(url)[0], "rb") as f:
                 b = f.read()
             return b
 
@@ -282,7 +285,7 @@ class AddonUpdater(QThread):
                                          self.addon_name, 'Failed to download latest version.')
                 else:
                     zip_path = os.path.join(self.local_dir,
-                                            uuid4().hex+".zip")
+                                            uuid4().hex + ".zip")
                     with open(zip_path, 'wb') as fp:
                         fp.write(data)
 
@@ -326,6 +329,31 @@ class SyncConfig:
     visible = True
     append_mode = False
     auto_save = False
+
+
+class ProfileConfig:
+    __metaclass__ = _MetaConfigObj
+
+    class Meta:
+        __StoreLocation__ = _MetaConfigObj.StoreLocation.Profile
+
+    is_first_webq_run = True
+
+
+class UserConfig:
+    __metaclass__ = _MetaConfigObj
+
+    class Meta:
+        __StoreLocation__ = _MetaConfigObj.StoreLocation.MediaFolder
+        __config_file__ = "user_cfg.json"
+
+    load_on_question = True
+    image_quality = 50
+    provider_urls = [
+        ("Bing", "https://www.bing.com/images/search?q=%s"),
+        ("Wiki", "https://en.wikipedia.org/wiki/?search=%s"),
+    ]
+    preload = True
 
 
 # endregion
@@ -813,7 +841,7 @@ class ModelDialog(Models):
     def default_config(self):
         return {str(self.mid):
                 # name, provider_url, visibility
-                    [[n, u, True] for n, u in PROVIDER_URLS]
+                    [[n, u, True] for n, u in UserConfig.provider_urls]
                 }
 
     def onWebQueryTabConfig(self, clicked):
@@ -863,23 +891,14 @@ class ModelDialog(Models):
 
 class WebQryAddon:
 
-    def __init__(self,
-                 load_on_question,
-                 image_quality,
-                 preload,
-                 provider_urls):
+    def __init__(self, version):
         self.shown = False
 
         # region variables
         self.current_index = 0
         self._first_show = True
-        self.load_on_question = load_on_question
-        self.preload = preload
-        self.image_quality = image_quality
-        self.provider_urls = provider_urls
+        self.version = version
 
-        global PROVIDER_URLS
-        PROVIDER_URLS = provider_urls
         # endregion
 
         self.dock = None
@@ -897,7 +916,7 @@ class WebQryAddon:
 
     def cur_tab_index_changed(self, tab_index):
         self.current_index = tab_index
-        if not self.preload:
+        if not UserConfig.preload:
             self.show_widget()
 
     @property
@@ -924,14 +943,13 @@ class WebQryAddon:
         mw.form.actionNoteTypes.triggered.connect(onNoteTypes)
         # eng region
 
-        from webquery import __version__
         AddonUpdater(
             mw,
             "Web Query",
             "https://raw.githubusercontent.com/upday7/WebQuery/dev-check_new_version/2.0/webquery.py",
             "https://github.com/upday7/WebQuery/blob/dev-check_new_version/2.0/2.0.zip?raw=true",
             mw.pm.addonFolder(),
-            __version__
+            self.version
         ).start()
 
     # endregion
@@ -1023,7 +1041,7 @@ class WebQryAddon:
         dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
 
         # region dock widgets
-        available_urls = [url for i, (n, url) in enumerate(self.provider_urls)
+        available_urls = [url for i, (n, url) in enumerate(UserConfig.provider_urls)
                           if i not in self.model_hidden_tab_index]
         self.webs = list(
             map(lambda x: WebQueryWidget(dock, ), range(available_urls.__len__()))
@@ -1038,11 +1056,11 @@ class WebQryAddon:
 
         # region main / tab widgets
         self._display_widget = QWidget(dock)
-        if self.provider_urls.__len__() - self.model_hidden_tab_index.__len__() > 1:
+        if UserConfig.provider_urls.__len__() - self.model_hidden_tab_index.__len__() > 1:
             self._display_widget = QTabWidget(dock)
             self._display_widget.setTabPosition(self._display_widget.East)
             added_web = 0
-            for i, (nm, url) in enumerate(self.provider_urls):
+            for i, (nm, url) in enumerate(UserConfig.provider_urls):
                 if i in self.model_hidden_tab_index:
                     continue
                 try:
@@ -1074,9 +1092,9 @@ class WebQryAddon:
             return
         if not self.word:
             return
-        if self.preload:
+        if UserConfig.preload:
             self.start_pages()
-        if not self.load_on_question:
+        if not UserConfig.load_on_question:
             self.hide_widget()
         else:
             self.show_widget()
@@ -1108,7 +1126,7 @@ class WebQryAddon:
         if self._first_show:
             self.web.reload()
             self._first_show = False
-        if not self.preload:
+        if not UserConfig.preload:
             self.start_pages()
 
     def hide(self):
@@ -1205,7 +1223,7 @@ class WebQryAddon:
             self.note.fields[fld_index] += anki_label.format(fn)
         else:
             self.note.fields[fld_index] = anki_label.format(fn)
-        if img.save(fn, 'jpg', self.image_quality):
+        if img.save(fn, 'jpg', UserConfig.image_quality):
             self.note.flush()
             self.card.flush()
             tooltip("Saved image to current card: {}".format(fn), 5000)

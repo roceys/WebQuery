@@ -73,7 +73,8 @@ class _MetaConfigObj(type):
         meta = attributes.get('Meta', type("Meta", (), {}))
         # meta values
         setattr(meta, "config_dict", config_dict)
-        setattr(meta, "__StoreLocation__", getattr(meta, "__StoreLocation__", False))
+        setattr(meta, "__StoreLocation__", getattr(meta, "__StoreLocation__", 0))
+        setattr(meta, "__config_file__", getattr(meta, "__config_file__", "config.json"))
 
         _MetaConfigObj.metas[c.__name__] = meta
         # endregion
@@ -82,6 +83,10 @@ class _MetaConfigObj(type):
             return c
 
         mcs.attributes = attributes  # attributes that is the configuration items
+
+        setattr(c, "media_json_file", mcs.MediaConfigJsonFile("_{}_{}".format(_MetaConfigObj.AddonModelName(),
+                                                                              _MetaConfigObj.metas[
+                                                                                  name].__config_file__).lower()))
 
         return c
 
@@ -111,7 +116,7 @@ class _MetaConfigObj(type):
                     with open(cls.ConfigJsonFile(), "w") as f:
                         json.dump(config_obj, f)
             elif store_location == cls.StoreLocation.MediaFolder:
-                with open(cls.MediaConfigJsonFile(), "w") as f:
+                with open(cls.media_json_file, "w") as f:
                     json.dump(config_obj, f)
             elif store_location == _MetaConfigObj.StoreLocation.Profile:
                 if _MetaConfigObj.IsAnki21():
@@ -131,7 +136,7 @@ class _MetaConfigObj(type):
         def _get_json_dict(json_file):
             if not os.path.isfile(json_file):
                 with open(json_file, "w") as f:
-                    json.dump(cls.attributes['config_dict'], f)
+                    json.dump(cls.config_dict, f)
             with open(json_file, 'r') as ff:
                 return json.load(ff)
 
@@ -150,7 +155,7 @@ class _MetaConfigObj(type):
             else:
                 disk_config_obj = obj
         elif store_location == _MetaConfigObj.StoreLocation.MediaFolder:
-            disk_config_obj = _get_json_dict(_MetaConfigObj.MediaConfigJsonFile())
+            disk_config_obj = _get_json_dict(cls.media_json_file)
         cls.config_dict.update(disk_config_obj)
         return cls.config_dict
 
@@ -164,8 +169,8 @@ class _MetaConfigObj(type):
         return os.path.join(_MetaConfigObj.AddonsFolder(), "config.json")
 
     @staticmethod
-    def MediaConfigJsonFile():
-        return os.path.join(_MetaConfigObj.MediaFolder(), "_{}_config.json".format(_MetaConfigObj.AddonModelName()))
+    def MediaConfigJsonFile(file_nm):
+        return os.path.join(_MetaConfigObj.MediaFolder(), file_nm)
 
     @staticmethod
     def AddonsFolder():
@@ -204,6 +209,7 @@ class SyncConfig(metaclass=_MetaConfigObj):
 class UserConfig(metaclass=_MetaConfigObj):
     class Meta:
         __StoreLocation__ = _MetaConfigObj.StoreLocation.MediaFolder
+        __config_file__ = "user_cfg.json"
 
     load_on_question = True
     image_quality = 50
