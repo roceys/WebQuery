@@ -26,7 +26,7 @@ from aqt.utils import openHelp
 from aqt.utils import restoreGeom
 from aqt.utils import tooltip
 
-# region bytes
+# region Bytes
 items_bytes = bytearray(
     b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x10\x00\x00\x00\x10\x08\x06\x00\x00\x00\x1f'
     b'\xf3\xffa\x00\x00\x00\x04sBIT\x08\x08\x08\x08|\x08d\x88\x00\x00\x00\tpHYs\x00\x00\x0b\x13'
@@ -45,60 +45,18 @@ webq_model_config_json_file = os.path.join(this_addon_folder, "web_query_model_c
 # endregion
 
 # region Meta classes
-class _MetaEasyVar(type):
-    def __new__(mcs, name, bases, attributes):
-        assert isinstance(attributes, dict)
-        c = super(_MetaEasyVar, mcs).__new__(mcs, name, bases, attributes)
-        return c
 
-    def __getattribute__(cls, item):
-        value = super(_MetaEasyVar, cls).__getattribute__(item)
-        if callable(value):
-            return value
-        _val = value
-        if _val and (item.endswith("folder") or item.startswith("folder")) or \
-                item.endswith("FOLDER") or item.startswith("FOLDER"):
-            return cls.ensure_dir(_val)
-        return _val
-
-    def ensure_dir(cls, name):
-        if not os.path.isdir(name):
-            os.makedirs(name)
-        return name
-
-    @property
-    def profile_folder(cls):
-        try:
-            return mw.pm.profileFolder()
-        except:
-            return ''
-
-    @property
-    def media_folder(cls):
-        try:
-            return os.path.join(cls.profile_folder, "collection.media")
-        except:
-            return ''
-
-
-class _Vars(metaclass=_MetaEasyVar):
-    addon_model_name = __name__.split(".")[0]
-    addons_folder = mw.addonManager.addonsFolder()
-    this_addon_folder = mw.addonManager.addonsFolder(addon_model_name)
-    user_files_folder = os.path.join(this_addon_folder, "user_files")
-
-    @staticmethod
-    def addon_config_obj(profile_store):
-        return mw.pm.profile if profile_store else mw.addonManager.getConfig(_Vars.addon_model_name)
-
-    addon_config_file = os.path.join(this_addon_folder, "config.json")
-
-
+# noinspection PyPep8Naming
 class _MetaConfigObj(type):
     """
     Meta class for reading/saving config.json for anki addon
     """
     metas = {}
+
+    class StoreLocation:
+        Profile = 0
+        AddonFolder = 1
+        MediaFolder = 3
 
     # noinspection PyArgumentList
     def __new__(mcs, name, bases, attributes):
@@ -115,7 +73,7 @@ class _MetaConfigObj(type):
         meta = attributes.get('Meta', type("Meta", (), {}))
         # meta values
         setattr(meta, "config_dict", config_dict)
-        setattr(meta, "__profile_store__", getattr(meta, "__profile_store__", False))
+        setattr(meta, "__StoreLocation__", getattr(meta, "__StoreLocation__", False))
 
         _MetaConfigObj.metas[c.__name__] = meta
         # endregion
@@ -126,7 +84,7 @@ class _MetaConfigObj(type):
         mcs.attributes = attributes  # attributes that is the configuration items
 
         # get default configuration keys and values from class properties
-        if meta.__profile_store__:
+        if meta.__StoreLocation__ == mcs.StoreLocation.Profile:
             # load to profile data
             # noinspection PyUnresolvedReferences
             addHook('profileLoaded', lambda: c.load_default_profile_var())
@@ -143,12 +101,8 @@ class _MetaConfigObj(type):
         if item == "meta":
             return _MetaConfigObj.metas[cls.__name__]
         else:
-            load_config = lambda: _Vars.addon_config_obj(cls.metas[cls.__name__].__profile_store__)
+            load_config = lambda: cls.get_config(cls.metas[cls.__name__].__StoreLocation__)
             config_obj = load_config()
-            if not config_obj:
-                with open(_Vars.addon_config_file, "w") as f:
-                    json.dump(cls.attributes['config_dict'], f)
-                config_obj = load_config()
             return config_obj.get(item)
 
     def __setattr__(cls, key, value):
@@ -159,38 +113,108 @@ class _MetaConfigObj(type):
         :return:
         """
         try:
-            config_obj = _Vars.addon_config_obj(cls.metas[cls.__name__].__profile_store__)
+            config_obj = cls.get_config(cls.metas[cls.__name__].__StoreLocation__)
             config_obj[key] = value
-            if not _MetaConfigObj.metas[cls.__name__].__profile_store__:
-                mw.addonManager.writeConfig(_Vars.addon_model_name, config_obj)
+            store_location = cls.metas[cls.__name__].__StoreLocation__
+            if store_location == cls.StoreLocation.AddonFolder:
+                if cls.IsAnki21:
+                    mw.addonManager.writeConfig(cls.AddonModelName, config_obj)
+                else:
+                    with open(cls.ConfigJsonFile(), "w") as f:
+                        json.dump(config_obj, f)
+            elif store_location == cls.StoreLocation.MediaFolder:
+                with open(cls.MediaConfigJsonFile(), "w") as f:
+                    json.dump(config_obj, f)
         except:
             super(_MetaConfigObj, cls).__setattr__(key, value)
 
     def load_default_json(cls):
-        with open(_Vars.addon_config_file, "w", encoding="utf-8") as f:
-            json.dump(cls.config_dict, f)
+        cls.get_config(cls.metas[cls.__name__])
 
     def load_default_profile_var(cls):
         for k, v in cls.config_dict.items():
-            _Vars.addon_config_obj(_MetaConfigObj.metas[cls.__name__].__profile_store__).setdefault(k, v)
+            cls.get_config(cls.metas[cls.__name__].__StoreLocation__).setdefault(k, v)
+
+    def get_config(cls, store_location):
+        """
+
+        :param store_location:
+        :rtype: dict
+        """
+
+        def _get_json_dict(json_file):
+            if not os.path.isfile(json_file):
+                with open(json_file, "w") as f:
+                    json.dump(cls.attributes['config_dict'], f)
+            with open(json_file, 'r') as ff:
+                return json.load(ff)
+
+        if store_location == _MetaConfigObj.StoreLocation.Profile:
+            if _MetaConfigObj.IsAnki21():
+                return mw.pm.profile
+            else:
+                return mw.pm.meta
+        elif store_location == _MetaConfigObj.StoreLocation.AddonFolder:
+            # ensure json file
+            obj = _get_json_dict(_MetaConfigObj.ConfigJsonFile())
+
+            if _MetaConfigObj.IsAnki21():
+                return mw.addonManager.getConfig(_MetaConfigObj.AddonModelName())
+            else:
+                return obj
+        elif store_location == _MetaConfigObj.StoreLocation.MediaFolder:
+            return _get_json_dict(_MetaConfigObj.MediaConfigJsonFile())
+
+    @staticmethod
+    def IsAnki21():
+        from anki import version
+        return eval(version[:3]) >= 2.1
+
+    @staticmethod
+    def ConfigJsonFile():
+        return os.path.join(_MetaConfigObj.AddonsFolder(), "config.json")
+
+    @staticmethod
+    def MediaConfigJsonFile():
+        return os.path.join(_MetaConfigObj.MediaFolder(), "_{}_config.json".format(_MetaConfigObj.AddonModelName()))
+
+    @staticmethod
+    def AddonsFolder():
+        if _MetaConfigObj.IsAnki21():
+            _ = os.path.join(mw.addonManager.addonsFolder(), _MetaConfigObj.AddonModelName())
+        else:
+            _ = os.path.join(mw.pm.addonFolder(), _MetaConfigObj.AddonModelName())
+        if aqt.isWin:
+            _ = _.encode(aqt.sys.getfilesystemencoding()).decode("utf-8")
+        return _.lower()
+
+    @staticmethod
+    def AddonModelName():
+        return __name__.split(".")[0]
+
+    @staticmethod
+    def MediaFolder():
+        return os.path.join(mw.pm.profileFolder(), "collection.media")
 
 
 # endregion
 
 # region Default Configuration Objects
-class ProfileConfig(metaclass=_MetaConfigObj):
+class SyncConfig(metaclass=_MetaConfigObj):
     class Meta:
-        __profile_store__ = True
+        __StoreLocation__ = _MetaConfigObj.StoreLocation.MediaFolder
 
     doc_size = (405, 808)
     image_field_map = {}
     qry_field_map = {}
     visible = True
+    append_mode = False
+    auto_save = False
 
 
 class UserConfig(metaclass=_MetaConfigObj):
     class Meta:
-        __profile_store__ = False
+        __StoreLocation__ = _MetaConfigObj.StoreLocation.MediaFolder
 
     load_on_question = True
     image_quality = 50
@@ -199,8 +223,6 @@ class UserConfig(metaclass=_MetaConfigObj):
         ("Wiki", "https://en.wikipedia.org/wiki/?search=%s"),
     ]
     preload = True
-    append_mode = False
-    auto_save = False
 
 
 # endregion
@@ -436,13 +458,13 @@ class CaptureOptionButton(QPushButton):
         self.action_append_mode.setCheckable(True)
         self.action_append_mode.setToolTip("Append Mode: Check this if you need captured image to be APPENDED "
                                            "to field instead of overwriting it")
-        self.action_append_mode.setChecked(UserConfig.append_mode)
+        self.action_append_mode.setChecked(SyncConfig.append_mode)
 
         self.action_auto_save = QAction("Auto-Save", self.menu)
         self.action_auto_save.setCheckable(True)
         self.action_auto_save.setToolTip("Auto-Save: If this is checked, image will be saved "
                                          "immediately once completed cropping.")
-        self.action_auto_save.setChecked(UserConfig.auto_save)
+        self.action_auto_save.setChecked(SyncConfig.auto_save)
 
         # bind action slots
         self.action_append_mode.toggled.connect(self.on_append_mode)
@@ -476,11 +498,11 @@ class CaptureOptionButton(QPushButton):
 
     @staticmethod
     def on_append_mode(checked):
-        UserConfig.append_mode = True if checked else False
+        SyncConfig.append_mode = True if checked else False
 
     @staticmethod
     def on_auto_save(checked):
-        UserConfig.auto_save = True if checked else False
+        SyncConfig.auto_save = True if checked else False
 
 
 class ResizeButton(QPushButton):
@@ -502,7 +524,7 @@ class ResizeButton(QPushButton):
             new_width = QApplication.desktop().rect().right() - QCursor().pos().x()
             self.dock_widget.setFixedWidth(new_width)
             doc_size = (new_width, self.dock_widget.height())
-            ProfileConfig.doc_size = doc_size
+            SyncConfig.doc_size = doc_size
             self.dock_widget.resize(QSize(new_width, self.dock_widget.height()))
         evt.accept()
 
@@ -549,7 +571,7 @@ class WebQueryWidget(QWidget):
 
         dock_widget = self.parent()
         assert isinstance(dock_widget, QDockWidget)
-        dock_widget.setFixedWidth(ProfileConfig.doc_size[0])
+        dock_widget.setFixedWidth(SyncConfig.doc_size[0])
         self.resize_btn = ResizeButton(self, dock_widget)
 
         self.capture_option_btn = CaptureOptionButton(self)
@@ -655,7 +677,7 @@ class WebQueryWidget(QWidget):
         self.show_grp(self.view_grp, False)
         self.show_grp(self.capture_grp, True)
 
-        if UserConfig.auto_save:
+        if SyncConfig.auto_save:
             self.save_img()
             self.save_img_button.setShortcutEnabled(Qt.Key_C, False)
         else:
@@ -830,7 +852,7 @@ class WebQryAddon:
     def word(self):
         if not mw.reviewer:
             return None
-        qry_field = ProfileConfig.qry_field_map.get(str(self.note.mid), 0)
+        qry_field = SyncConfig.qry_field_map.get(str(self.note.mid), 0)
         word = re.sub('<[^<]+?>', '', self.note.fields[qry_field]).strip()
         return word
 
@@ -873,18 +895,18 @@ class WebQryAddon:
 
             def resizeEvent(self, evt):
                 assert isinstance(evt, QResizeEvent)
-                ProfileConfig.doc_size = (evt.size().width(),
-                                          evt.size().height())
+                SyncConfig.doc_size = (evt.size().width(),
+                                       evt.size().height())
                 super(DockableWithClose, self).resizeEvent(evt)
                 evt.accept()
 
             def sizeHint(self):
-                return QSize(ProfileConfig.doc_size[0], ProfileConfig.doc_size[1])
+                return QSize(SyncConfig.doc_size[0], SyncConfig.doc_size[1])
 
         dock = DockableWithClose(title, mw)
         dock.setObjectName(title)
         dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        dock.setFeatures(QDockWidget.DockWidgetFloatable|QDockWidget.DockWidgetMovable)
+        dock.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
 
         # region dock widgets
         available_urls = [url for i, (n, url) in enumerate(UserConfig.provider_urls)
@@ -953,8 +975,8 @@ class WebQryAddon:
             page.loadFinished.connect(lambda s: web.reload)
             web.add_query_page(page)
             if self.reviewer:
-                image_field = ProfileConfig.image_field_map.get(str(self.note.mid), 1)
-                qry_field = ProfileConfig.qry_field_map.get(str(self.note.mid), 0)
+                image_field = SyncConfig.image_field_map.get(str(self.note.mid), 1)
+                qry_field = SyncConfig.qry_field_map.get(str(self.note.mid), 0)
                 web.capture_option_btn.setup_image_field(self.note.keys(), image_field)
                 web.capture_option_btn.setup_query_field(self.note.keys(), qry_field)
                 web.capture_option_btn.field_changed.connect(self.img_field_changed)
@@ -988,17 +1010,17 @@ class WebQryAddon:
             if not self.dock:
                 return False
             self.dock.closed.connect(self.on_closed)
-        self.dock.setVisible(ProfileConfig.visible)
+        self.dock.setVisible(SyncConfig.visible)
         return True
 
     def toggle(self):
         if not self.ensure_dock():
             return
         if self.dock.isVisible():
-            ProfileConfig.visible = False
+            SyncConfig.visible = False
             self.hide()
         else:
-            ProfileConfig.visible = True
+            SyncConfig.visible = True
             self.show_dock()
 
     def on_closed(self):
@@ -1007,9 +1029,9 @@ class WebQryAddon:
     def img_field_changed(self, index):
         if index == -1:
             return
-        _mp = ProfileConfig.image_field_map
+        _mp = SyncConfig.image_field_map
         _mp[str(self.note.mid)] = index
-        ProfileConfig.image_field_map = _mp
+        SyncConfig.image_field_map = _mp
 
         for web in self.webs:
             if not web is self.web:
@@ -1018,9 +1040,9 @@ class WebQryAddon:
     def qry_field_changed(self, index):
         if index == -1:
             return
-        _mp = ProfileConfig.qry_field_map
+        _mp = SyncConfig.qry_field_map
         _mp[str(self.note.mid)] = index
-        ProfileConfig.qry_field_map = _mp
+        SyncConfig.qry_field_map = _mp
         for web in self.webs:
             if not web is self.web:
                 web.capture_option_btn.setup_query_field(self.note.keys(), index)
@@ -1037,7 +1059,7 @@ class WebQryAddon:
         fld_index = self.web.capture_option_btn.selected_index
         anki_label = '<img src="{}">'
         fn = "web_qry_{}.jpg".format(uuid4().hex.upper())
-        if UserConfig.append_mode:
+        if SyncConfig.append_mode:
             self.note.fields[fld_index] += anki_label.format(fn)
         else:
             self.note.fields[fld_index] = anki_label.format(fn)
