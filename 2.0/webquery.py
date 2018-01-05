@@ -18,6 +18,8 @@
 
 from anki.hooks import addHook
 
+__version__ = '1.2.0'
+
 
 # USER PLEASE READ
 # YOU MUST NOT CHANGE THE ORDER OF ** PROVIDER URLS **
