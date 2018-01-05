@@ -578,25 +578,15 @@ class ImageLabel(QLabel):
         self.repaint()
 
 
-# noinspection PyMethodMayBeStatic
-class CaptureOptionButton(QPushButton):
+class OptionsMenu(QMenu):
     field_changed = pyqtSignal(int)
     query_field_change = pyqtSignal(int)
 
-    def __init__(self, parent, icon=None):
-        if icon:
-            super(CaptureOptionButton, self).__init__(icon, "", parent)
-        else:
-            super(CaptureOptionButton, self).__init__("Options", parent)
+    def __init__(self, parent):
+        super(OptionsMenu, self).__init__('Options', parent)
+
         self.fld_names = []
         self.selected_index = 1
-
-        # set style
-        # self.setFlat(True)
-        self.setToolTip("Capture Options")
-
-        # setup menu
-        self.menu = QMenu(self)
 
         # init objects before setting up
         self.field_menu = None
@@ -609,18 +599,13 @@ class CaptureOptionButton(QPushButton):
         self.setup_image_field([])
         self.setup_query_field([])
 
-        # add menu to button
-        self.setMenu(self.menu)
-
-        self.setText("Options")
-
     def setup_query_field(self, fld_names, selected_index=0):
         self.query_fld_names = fld_names
         if not self.qry_field_menu:
             pix = QPixmap()
             pix.loadFromData(items_bytes)
             icon = QIcon(pix)
-            self.qry_field_menu = QMenu("Query Field", self.menu)
+            self.qry_field_menu = QMenu("Query Field", self)
             self.qry_field_menu.setIcon(icon)
         if not self.qry_field_action_grp:
             self.qry_field_action_grp = QActionGroup(self.qry_field_menu)
@@ -640,8 +625,8 @@ class CaptureOptionButton(QPushButton):
                 selected_action.setChecked(True)
 
         self.qry_field_menu.addActions(self.qry_field_action_grp.actions())
-        self.menu.addSeparator().setText("Fields")
-        self.menu.addMenu(self.qry_field_menu)
+        self.addSeparator().setText("Fields")
+        self.addMenu(self.qry_field_menu)
 
     def setup_image_field(self, fld_names, selected_index=1):
         self.fld_names = fld_names
@@ -649,7 +634,7 @@ class CaptureOptionButton(QPushButton):
             pix = QPixmap()
             pix.loadFromData(items_bytes)
             icon = QIcon(pix)
-            self.field_menu = QMenu("Image Field", self.menu)
+            self.field_menu = QMenu("Image Field", self)
             self.field_menu.setIcon(icon)
         if not self.field_action_grp:
             self.field_action_grp = QActionGroup(self.field_menu)
@@ -671,24 +656,24 @@ class CaptureOptionButton(QPushButton):
                 # self.setText(selected_action.text())
 
         self.field_menu.addActions(self.field_action_grp.actions())
-        self.menu.addSeparator().setText("Fields")
-        self.menu.addMenu(self.field_menu)
+        self.addSeparator().setText("Fields")
+        self.addMenu(self.field_menu)
 
     def setup_option_actions(self):
         # setup actions
-        self.action_append_mode = QAction("Append Mode", self.menu)
+        self.action_append_mode = QAction("Append Mode", self)
         self.action_append_mode.setCheckable(True)
         self.action_append_mode.setToolTip("Append Mode: Check this if you need captured image to be APPENDED "
                                            "to field instead of overwriting it")
         self.action_append_mode.setChecked(SyncConfig.append_mode)
 
-        self.action_auto_save = QAction("Auto-Save", self.menu)
+        self.action_auto_save = QAction("Auto-Save", self)
         self.action_auto_save.setCheckable(True)
         self.action_auto_save.setToolTip("Auto-Save: If this is checked, image will be saved "
                                          "immediately once completed cropping.")
         self.action_auto_save.setChecked(SyncConfig.auto_save)
 
-        self.action_open_user_cfg = QAction("Config", self.menu)
+        self.action_open_user_cfg = QAction("Config", self)
         pix = QPixmap()
         pix.loadFromData(gear_bytes)
         self.action_open_user_cfg.setIcon(QIcon(pix))
@@ -699,7 +684,7 @@ class CaptureOptionButton(QPushButton):
         self.action_open_user_cfg.triggered.connect(lambda: os.startfile(UserConfig.media_json_file))
 
         # add actions to menu
-        self.menu.addActions([
+        self.addActions([
             ac for ac in map(lambda nm: getattr(self, nm),
                              [att for att in dir(self) if att.startswith("action_")])
         ])
@@ -731,6 +716,29 @@ class CaptureOptionButton(QPushButton):
 
     def on_auto_save(self, checked):
         SyncConfig.auto_save = True if checked else False
+
+
+# noinspection PyMethodMayBeStatic
+class CaptureOptionButton(QPushButton):
+    field_changed = pyqtSignal(int)
+    query_field_change = pyqtSignal(int)
+
+    def __init__(self, parent, options_menu, icon=None):
+        if icon:
+            super(CaptureOptionButton, self).__init__(icon, "", parent)
+        else:
+            super(CaptureOptionButton, self).__init__("Options", parent)
+
+        # set style
+        # self.setFlat(True)
+        self.setToolTip("Capture Options")
+
+        # setup menu
+        # self.menu = options_menu #OptionsMenu(self)
+        # self.menu.field_changed.connect(lambda x: self.field_changed.emit(x))
+        # self.menu.query_field_change.connect(lambda x: self.query_field_change.emit(x))
+        self.setMenu(options_menu)
+        self.setText('Options')
 
 
 class ResizeButton(QPushButton):
@@ -772,7 +780,7 @@ class WebQueryWidget(QWidget):
     def reload(self):
         self._view.reload()
 
-    def __init__(self, parent):
+    def __init__(self, parent, options_menu):
         super(WebQueryWidget, self).__init__(parent)
 
         # all widgets
@@ -806,7 +814,7 @@ class WebQueryWidget(QWidget):
         self.update_btn = UpgradeButton(self)
         self.update_btn.setMaximumWidth(20)
 
-        self.capture_option_btn = CaptureOptionButton(self)
+        self.capture_option_btn = CaptureOptionButton(self, options_menu)
         self.capture_option_btn.setMaximumWidth(100)
         self.img_btn_grp_ly = QHBoxLayout()
         self.img_btn_grp_ly.addWidget(self.resize_btn)
@@ -1034,6 +1042,7 @@ class WebQryAddon:
         addHook("profileLoaded", self.profileLoaded)
 
         self._updator = None
+        self.options_menu = None
         self.init_menu()
 
     def cur_tab_index_changed(self, tab_index):
@@ -1051,11 +1060,16 @@ class WebQryAddon:
         return self.webs[self.current_index]
 
     def init_menu(self):
+        main_menu = QMenu("Web Query", mw.form.menuTools)
         action = QAction(mw.form.menuTools)
-        action.setText("Web Query")
+        action.setText("Toggle Web Query")
         action.setShortcut(QKeySequence("ALT+W"))
-        mw.form.menuTools.addAction(action)
+        main_menu.addAction(action)
         action.triggered.connect(self.toggle)
+        self.options_menu = OptionsMenu(main_menu)
+        main_menu.addMenu(self.options_menu)
+
+        mw.form.menuTools.addMenu(main_menu)
 
     def profileLoaded(self):
         # region owverwrite note type management
@@ -1158,7 +1172,7 @@ class WebQryAddon:
         available_urls = [url for i, (n, url) in enumerate(UserConfig.provider_urls)
                           if i not in self.model_hidden_tab_index]
         self.webs = list(
-            map(lambda x: WebQueryWidget(dock, ), range(available_urls.__len__()))
+            map(lambda x: WebQueryWidget(dock, self.options_menu), range(available_urls.__len__()))
         )
         self.pages = list(
             map(lambda params: _Page(parent=self.webs[params[0]], provider_url=params[1]),
@@ -1223,12 +1237,11 @@ class WebQryAddon:
             if self.reviewer:
                 image_field = SyncConfig.image_field_map.get(str(self.note.mid), 1)
                 qry_field = SyncConfig.qry_field_map.get(str(self.note.mid), 0)
-                items = [(f['name'], ord)
-                         for ord, f in sorted(self.note._fmap.values())]
-                web.capture_option_btn.setup_image_field([i for i, o in items], image_field)
-                web.capture_option_btn.setup_query_field([i for i, o in items], qry_field)
-                web.capture_option_btn.field_changed.connect(self.img_field_changed)
-                web.capture_option_btn.query_field_change.connect(self.qry_field_changed)
+                items = [(f['name'], ord) for ord, f in sorted(self.note._fmap.values())]
+                self.options_menu.setup_image_field([i for i, o in items], image_field)
+                self.options_menu.setup_query_field([i for i, o in items], qry_field)
+                self.options_menu.field_changed.connect(self.img_field_changed)
+                self.options_menu.query_field_change.connect(self.qry_field_changed)
 
     def hide_widget(self):
         self._display_widget.setVisible(False)
@@ -1303,11 +1316,8 @@ class WebQryAddon:
         _mp[str(self.note.mid)] = index
         SyncConfig.image_field_map = _mp
 
-        for web in self.webs:
-            if not web is self.web:
-                items = [(f['name'], ord)
-                         for ord, f in sorted(self.note._fmap.values())]
-                web.capture_option_btn.setup_image_field([i for i, o in items], index)
+        items = [(f['name'], ord) for ord, f in sorted(self.note._fmap.values())]
+        self.options_menu.setup_image_field([i for i, o in items], index)
 
     def qry_field_changed(self, index):
         if index == -1:
@@ -1316,11 +1326,8 @@ class WebQryAddon:
         _mp[str(self.note.mid)] = index
         SyncConfig.qry_field_map = _mp
 
-        for web in self.webs:
-            if not web is self.web:
-                items = [(f['name'], ord)
-                         for ord, f in sorted(self.note._fmap.values())]
-                web.capture_option_btn.setup_query_field([i for i, o in items], index)
+        items = [(f['name'], ord) for ord, f in sorted(self.note._fmap.values())]
+        self.options_menu.setup_query_field([i for i, o in items], index)
 
     def save_img(self, img):
         """
@@ -1331,7 +1338,7 @@ class WebQryAddon:
         img = img.convertToFormat(QImage.Format_RGB32, Qt.ThresholdDither | Qt.AutoColor)
         if not self.reviewer:
             return
-        fld_index = self.web.capture_option_btn.selected_index
+        fld_index = self.options_menu.selected_index
         anki_label = '<img src="{}">'
         fn = "web_qry_{}.jpg".format(uuid4().hex.upper())
         if SyncConfig.append_mode:
