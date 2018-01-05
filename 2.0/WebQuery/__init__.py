@@ -20,7 +20,7 @@ from aqt.utils import tooltip, restoreGeom
 
 from .uuid import uuid4
 
-# region bytes
+# region Bytes
 items_bytes = bytearray(
     b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x10\x00\x00\x00\x10\x08\x06\x00\x00\x00\x1f'
     b'\xf3\xffa\x00\x00\x00\x04sBIT\x08\x08\x08\x08|\x08d\x88\x00\x00\x00\tpHYs\x00\x00\x0b\x13'
@@ -39,7 +39,6 @@ global PROVIDER_URLS
 
 
 # endregion
-
 
 # region Meta classes
 
@@ -199,6 +198,7 @@ class _MetaConfigObj(type):
 
 # endregion
 
+# region Default Configuration Objects
 class SyncConfig:
     __metaclass__ = _MetaConfigObj
 
@@ -212,6 +212,8 @@ class SyncConfig:
     append_mode = False
     auto_save = False
 
+
+# endregion
 
 # endregion
 class _Page(QWebPage):
@@ -1075,4 +1077,3 @@ class WebQryAddon:
             self.note.flush()
             self.card.flush()
             tooltip("Saved image to current card: {}".format(fn), 5000)
-        # self.reviewer.show()
