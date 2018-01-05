@@ -218,11 +218,15 @@ class SyncConfig:
     append_mode = False
     auto_save = False
 
-class ProfileConfig(metaclass=_MetaConfigObj):
+
+class ProfileConfig():
+    __metaclass__ = _MetaConfigObj
+
     class Meta:
         __StoreLocation__ = _MetaConfigObj.StoreLocation.Profile
 
     is_first_webq_run = True
+
 
 # endregion
 
