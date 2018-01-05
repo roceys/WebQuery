@@ -978,7 +978,7 @@ class WebQryAddon:
             mw,
             "Web Query",
             "https://raw.githubusercontent.com/upday7/WebQuery/dev-check_new_version/2.0/webquery.py",
-            "https://github.com/upday7/WebQuery/blob/dev-check_new_version/2.0/2.0.zip?raw=true",
+            "https://github.com/upday7/WebQuery/blob/dev-check_new_version/2.0.zip?raw=true",
             mw.pm.addonFolder(),
             self.version
         ).start()
