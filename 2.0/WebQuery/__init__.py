@@ -20,7 +20,7 @@ from aqt.utils import tooltip, restoreGeom
 
 from .uuid import uuid4
 
-# region Bytes
+# region bytes
 items_bytes = bytearray(
     b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x10\x00\x00\x00\x10\x08\x06\x00\x00\x00\x1f'
     b'\xf3\xffa\x00\x00\x00\x04sBIT\x08\x08\x08\x08|\x08d\x88\x00\x00\x00\tpHYs\x00\x00\x0b\x13'
@@ -185,7 +185,128 @@ class _MetaConfigObj(type):
 
 # endregion
 
-# region Default Configuration Objects
+# region Auto-Update
+
+try:
+    import urllib2 as web
+except ImportError:
+    from urllib import request as web
+
+
+class AddonUpdater(QThread):
+    """
+    Class for auto-check and upgrade source codes, uses part of the source codes from ankiconnect.py : D
+    """
+
+    def __init__(self, parent,
+                 addon_name,
+                 version_py,
+                 source_zip,
+                 local_dir, current_version, version_key_word="__version__"):
+        """
+        :param parent: QWidget
+        :param addon_name: addon name
+        :param version_key_word: version variable name, should be in format "X.X.X", this keyword should be stated in the first lines of the file
+        :param version_py: remote *.py file possibly on github where hosted __version__ variable
+        :param source_zip: zip file to be downloaded for upgrading
+        :param local_dir: directory for extractions from source zip file
+        :param current_version: current version string in format "X.X.X"
+
+        :type parent: QWidget
+        :type addon_name: str
+        :type version_key_word: str
+        :type version_py: str
+        :type source_zip: str
+        :type local_dir: str
+        :type current_version: str
+        """
+        super(AddonUpdater, self).__init__(parent)
+        self.source_zip = source_zip
+        self.version_py = version_py
+        self.local_dir = local_dir
+        self.version_key_word = version_key_word
+        self.addon_name = addon_name
+        self.current_version = current_version
+
+    @property
+    def has_new_version(self):
+        try:
+            cur_ver = self._make_version_int(self.current_version)
+            remote_ver = self._make_version_int(
+                [l for l in self._download(self.version_py).split("\n") if self.version_key_word in l][0].split("=")[1])
+            return cur_ver < remote_ver
+        except:
+            return False
+
+    @staticmethod
+    def _download(url):
+        try:
+            resp = web.urlopen(url, timeout=10)
+        except web.URLError:
+            return None
+
+        if resp.code != 200:
+            return None
+
+        return resp.read()
+
+    @staticmethod
+    def _make_version_int(ver_string):
+        ver_str = "".join([n for n in str(ver_string) if n in "1234567890"])
+        return int(ver_str)
+
+    @staticmethod
+    def _make_data_string(data):
+        return data.decode('utf-8')
+
+    def upgrade(self):
+        response = QMessageBox.question(
+            self.parent(),
+            self.addon_name,
+            'Upgrade to the latest version?',
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if response == QMessageBox.Yes:
+            try:
+                data = self._download(self.source_zip)
+                if data is None:
+                    QMessageBox.critical(self.parent(),
+                                         self.addon_name, 'Failed to download latest version.')
+                else:
+                    zip_path = os.path.join(self.local_dir,
+                                            os.path.split(self.source_zip)[1])
+                    with open(zip_path, 'wb') as fp:
+                        fp.write(data)
+
+                    # unzip
+                    from zipfile import ZipFile
+                    zip_file = ZipFile(zip_path)
+                    if not os.path.isdir(self.local_dir):
+                        os.makedirs(self.local_dir, exist_ok=True)
+                    for names in zip_file.namelist():
+                        zip_file.extract(names, self.local_dir)
+                    zip_file.close()
+
+                    # remove zip file
+                    os.remove(zip_path)
+
+                    QMessageBox.information(self.parent(), self.addon_name,
+                                            'Upgraded to the latest version, please restart Anki.')
+
+                    return True
+            except:
+                QMessageBox.critical(self.parent(), self.addon_name,
+                                     'Upgraded operation failed!')
+            return False
+
+    def run(self):
+        if self.has_new_version:
+            self.upgrade()
+
+
+# endregion
+
 class SyncConfig:
     __metaclass__ = _MetaConfigObj
 
@@ -199,17 +320,6 @@ class SyncConfig:
     append_mode = False
     auto_save = False
 
-
-class ProfileConfig:
-    __metaclass__ = _MetaConfigObj
-
-    class Meta:
-        __StoreLocation__ = _MetaConfigObj.StoreLocation.Profile
-
-    is_first_webq_run = True
-
-
-# endregion
 
 # endregion
 class _Page(QWebPage):
@@ -798,7 +908,6 @@ class WebQryAddon:
         mw.form.menuTools.addAction(action)
         action.triggered.connect(self.toggle)
 
-    # region replace mw onNoteTypes
     def profileLoaded(self):
         # region owverwrite note type management
         def onNoteTypes():
@@ -808,16 +917,15 @@ class WebQryAddon:
         mw.form.actionNoteTypes.triggered.connect(onNoteTypes)
         # eng region
 
-    # endregion
-    # region replace mw onNoteTypes
-    def profileLoaded(self):
-        # region owverwrite note type management
-        def onNoteTypes():
-            ModelDialog(mw, mw, fromMain=True).exec_()
-
-        mw.form.actionNoteTypes.triggered.disconnect()
-        mw.form.actionNoteTypes.triggered.connect(onNoteTypes)
-        # eng region
+        from ..webquery import __version__
+        AddonUpdater(
+            mw,
+            "Web Query",
+            "https://raw.githubusercontent.com/upday7/WebQuery/dev-check_new_version/2.0/webquery.py",
+            "https://github.com/upday7/WebQuery/raw/dev-check_new_version/2.0.zip",
+            mw.pm.addonFolder(),
+            __version__
+        ).start()
 
     # endregion
     @property
