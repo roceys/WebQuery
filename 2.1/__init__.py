@@ -252,6 +252,14 @@ class ProfileConfig(metaclass=_MetaConfigObj):
     is_first_webq_run = True
 
 
+class ModelConfig(metaclass=_MetaConfigObj):
+    class Meta:
+        __StoreLocation__ = _MetaConfigObj.StoreLocation.MediaFolder
+        __config_file__ = "model_cfg.json"
+
+    visibility = {}  # MID: [ { PROVIDER URL NAME: VISIBLE }]
+
+
 # endregion
 
 
@@ -762,53 +770,51 @@ class ModelDialog(aqt.models.Models):
         return self.model['id']
 
     @property
-    def default_config(self):
-        return {str(self.mid):
-                # name, provider_url, visibility
-                    [[n, u, True] for n, u in UserConfig.provider_urls]
-                }
+    def default_visibility(self):
+        return {n: True for n, u in UserConfig.provider_urls}
 
     def onWebQueryTabConfig(self, clicked):
-        self.config = self.default_config
-        if os.path.isfile(webq_model_config_json_file):
-            with open(webq_model_config_json_file, "r") as f:
-                try:
-                    self.config = json.load(f)
-                    default_config_items = self.default_config[str(self.mid)]
-                    config_items = self.config[str(self.mid)]
-                    if config_items.__len__() < default_config_items.__len__():
-                        self.config[str(self.mid)].extend(default_config_items[config_items.__len__():])
-                    else:
-                        self.config[str(self.mid)] = self.config[str(self.mid)][:default_config_items.__len__()]
-                except:
-                    pass
+        _ = ModelConfig.visibility
+        if not ModelConfig.visibility.get(str(self.mid)):
+            _[str(self.mid)] = self.default_visibility
+        else:
+            for k in self.default_visibility.keys():
+                if k not in _[str(self.mid)].keys():
+                    _[str(self.mid)][k] = self.default_visibility[k]
+        _pop_keys = []
+        for ok in _[str(self.mid)].keys():
+            if ok not in self.default_visibility.keys():
+                _pop_keys.append(ok)
+        for k in _pop_keys:
+            _[str(self.mid)].pop(k)
+        ModelConfig.visibility = _
 
         class _dlg(QDialog):
             def __init__(inner_self):
                 super(_dlg, inner_self).__init__(self)
                 inner_self.setWindowTitle("Toggle Visibility")
 
-                inner_self.mode_config_items = self.config.get(str(self.mid), self.default_config[str(self.mid)])
-
+                inner_self.provider_url_visibility_dict = ModelConfig.visibility.get(str(self.mid), {})
                 # shown check boxes
                 inner_self.checkboxes = list(map(
-                    lambda args: QCheckBox("{}: {}".format(args[0], args[1]), inner_self),
-                    inner_self.mode_config_items)
+                    lambda provider_url_nm: QCheckBox("{}".format(provider_url_nm), inner_self),
+                    sorted(inner_self.provider_url_visibility_dict.keys()))
                 )
-                list(map(lambda args: args[1].setChecked(inner_self.mode_config_items[args[0]][2]),
-                         enumerate(inner_self.checkboxes)))
-                list(map(lambda args: args[1].toggled.connect(partial(inner_self.on_visibility_checked, args[0])),
-                         enumerate(inner_self.checkboxes)))
+
+                list(map(lambda cb: cb.setChecked(inner_self.provider_url_visibility_dict[cb.text()]),
+                         inner_self.checkboxes))
+                list(map(lambda cb: cb.toggled.connect(partial(inner_self.on_visibility_checked, cb.text())),
+                         inner_self.checkboxes))
 
                 ly = QVBoxLayout(inner_self)
                 list(map(ly.addWidget, inner_self.checkboxes))
                 inner_self.setLayout(ly)
 
-            def on_visibility_checked(inner_self, index, checked):
-                inner_self.mode_config_items[index][2] = checked
-                with open(webq_model_config_json_file, "w+") as f:
-                    self.config[self.mid] = inner_self.mode_config_items
-                    json.dump(self.config, f)
+            def on_visibility_checked(inner_self, provider_url_nm, checked):
+                inner_self.provider_url_visibility_dict[provider_url_nm] = checked
+                _ = ModelConfig.visibility
+                _[str(self.mid)].update(inner_self.provider_url_visibility_dict)
+                ModelConfig.visibility = _
 
         _dlg().exec_()
 
@@ -919,27 +925,11 @@ class WebQryAddon:
         return word
 
     @property
-    def model_config(self):
-        default_empty = {str(self.note.mid): {}}
-        if os.path.isfile(webq_model_config_json_file):
-            with open(webq_model_config_json_file, "r") as f:
-                try:
-                    config = json.load(f)
-                except:
-                    config = default_empty
-        else:
-            config = default_empty
-        try:
-            return config[str(self.note.mid)]
-        except KeyError:
-            config = default_empty
-
-        return config[str(self.note.mid)]
-
-    @property
     def model_hidden_tab_index(self):
-        if self.model_config:
-            model_hidden_tab_index = [i for i, args in enumerate(self.model_config) if not args[2]]
+        visibilities = ModelConfig.visibility.get(str(self.note.mid))
+        if visibilities:
+            keys = [k for k, v in visibilities.items() if not v]
+            model_hidden_tab_index = [i for i, args in enumerate(UserConfig.provider_urls) if args[0] in keys]
         else:
             model_hidden_tab_index = []
         return model_hidden_tab_index
