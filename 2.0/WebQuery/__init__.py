@@ -11,10 +11,13 @@ import random
 import re
 from functools import partial
 
+import time
+from PyQt4.QtNetwork import QNetworkRequest, QNetworkAccessManager
 from anki.hooks import addHook
 # noinspection PyArgumentList
 from anki.lang import _
 from aqt import *
+from aqt.main import AnkiQt
 from aqt.models import Models
 from aqt.utils import tooltip, restoreGeom
 
@@ -502,6 +505,10 @@ class _Page(QWebPage):
         self.keyword = keyword
         self._provider_url = provider_url
 
+        self.event_looptime = 0.01
+        self._load_status = None
+        self.loadFinished.connect(self._on_load_finished)
+
     def userAgentForUrl(self, url):
         return 'Mozilla/5.0 (iPhone; U; CPU like Mac OS X) ' \
                'AppleWebKit/420.1 (KHTML, like Gecko) Version/3.0 Mobile/4A93 '
@@ -524,7 +531,39 @@ class _Page(QWebPage):
             url = QUrl('about:blank')
         else:
             url = self.get_url()
-        self.mainFrame().load(url)
+
+        req = QNetworkRequest(QUrl(url))
+
+        self.mainFrame().load(req)
+        self._wait_load(10)
+
+    def _events_loop(self, wait=None):
+        if wait is None:
+            wait = self.event_looptime
+        QApplication.processEvents()
+        time.sleep(wait)
+
+    def _on_load_finished(self, successful):
+        self._load_status = successful
+
+    def _wait_load(self, timeout=None):
+        self._events_loop(0.0)
+        if self._load_status is not None:
+            load_status = self._load_status
+            self._load_status = None
+            return load_status
+        itime = time.time()
+        while self._load_status is None:
+            if timeout and time.time() - itime > timeout:
+                raise Exception("Timeout reached: %d seconds" % timeout)
+            self._events_loop()
+        self._events_loop(0.0)
+        if self._load_status:
+            # self.load_js()
+            self.setViewportSize(self.mainFrame().contentsSize())
+        load_status = self._load_status
+        self._load_status = None
+        return load_status
 
 
 class _WebView(QWebView):
@@ -835,7 +874,16 @@ class OptionsMenu(QMenu):
         self.action_open_user_cfg.setIcon(QIcon(pix))
 
         # bind action slots
-        self.action_open_user_cfg.triggered.connect(lambda: os.startfile(UserConfig.media_json_file))
+        def open_file(path):
+            if aqt.isWin:
+                os.startfile(path)
+            else:
+                QInputDialog.getText(self.parent(), "Config File",
+                                     "Using default text editor to open below file:",
+                                     QLineEdit.Normal,
+                                     unicode(path))
+
+        self.action_open_user_cfg.triggered.connect(lambda: open_file(UserConfig.media_json_file))
 
         self.addAction(self.action_open_user_cfg)
 
@@ -1330,12 +1378,13 @@ class WebQryAddon:
             web.img_saving.connect(self.save_img)
 
         # region main / tab widgets
-        self._display_widget = QWidget(dock)
         if UserConfig.provider_urls.__len__() - self.model_hidden_tab_index.__len__() > 1:
             self._display_widget = QTabWidget(dock)
+            self._display_widget.setVisible(False)
             self._display_widget.setTabPosition(self._display_widget.East)
             added_web = 0
             for i, (nm, url) in enumerate(UserConfig.provider_urls):
+                self.webs[added_web].setVisible(False)
                 if i in self.model_hidden_tab_index:
                     continue
                 try:
@@ -1345,6 +1394,8 @@ class WebQryAddon:
                     continue
             self._display_widget.currentChanged.connect(self.cur_tab_index_changed)
         else:
+            self._display_widget = QWidget(dock)
+            self._display_widget.setVisible(False)
             l = QVBoxLayout(self._display_widget)
             try:
                 l.addWidget(self.web)
@@ -1354,10 +1405,10 @@ class WebQryAddon:
                                            " selected<br><br>Go to Tools > Manage Note Types > Web Query Tab Visibility")
                 return
             self._display_widget.setLayout(l)
-        self._display_widget.setVisible(False)
 
         # endregion
         dock.setWidget(self._display_widget)
+        self.hide_widget()
         mw.addDockWidget(Qt.RightDockWidgetArea, dock)
 
         return dock
@@ -1380,11 +1431,6 @@ class WebQryAddon:
         QApplication.restoreOverrideCursor()
         for wi, web in enumerate(self.webs, ):
             page = self.pages[wi]
-            try:
-                page.loadFinished.disconnect()
-            except TypeError:
-                pass
-            page.loadFinished.connect(lambda s: web.reload)
             page.load(self.word)
             web.add_query_page(page)
 
@@ -1411,9 +1457,9 @@ class WebQryAddon:
         if not self.dock:
             return
         self._display_widget.setVisible(True)
+        # list(map(lambda web: web.setVisible(True), self.webs))
         if self._first_show:
             self.web.update_btn.updator.start()
-            self.web.reload()
             self._first_show = False
         if not UserConfig.preload:
             self.start_pages()

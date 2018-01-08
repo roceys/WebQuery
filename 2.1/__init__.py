@@ -625,7 +625,15 @@ class OptionsMenu(QMenu):
         self.action_open_user_cfg.setIcon(QIcon(pix))
 
         # bind action slots
-        self.action_open_user_cfg.triggered.connect(lambda: os.startfile(UserConfig.media_json_file))
+        def open_file(path):
+            if aqt.isWin:
+                os.startfile(path)
+            else:
+                path, ok = QInputDialog.getText(self.parent(), "Config File",
+                                                "Using default text editor to open below file:",
+                                                QLineEdit.Normal, str(path))
+
+        self.action_open_user_cfg.triggered.connect(lambda: open_file(UserConfig.media_json_file))
 
         self.addAction(self.action_open_user_cfg)
 
@@ -1095,9 +1103,9 @@ class WebQryAddon:
             web.img_saving.connect(self.save_img)
 
         # region main / tab widgets
-        self._display_widget = QWidget(dock)
         if UserConfig.provider_urls.__len__() - self.model_hidden_tab_index.__len__() > 1:
             self._display_widget = QTabWidget(dock)
+            self._display_widget.setVisible(False)
             self._display_widget.setTabPosition(self._display_widget.East)
             added_web = 0
             for i, (nm, url) in enumerate(UserConfig.provider_urls):
@@ -1110,6 +1118,8 @@ class WebQryAddon:
                     continue
             self._display_widget.currentChanged.connect(self.cur_tab_index_changed)
         else:
+            self._display_widget = QWidget(dock)
+            self._display_widget.setVisible(False)
             l = QVBoxLayout(self._display_widget)
             try:
                 l.addWidget(self.web)
@@ -1119,7 +1129,6 @@ class WebQryAddon:
                                            " selected<br><br>Go to Tools > Manage Note Types > Web Query Tab Visibility")
                 return
             self._display_widget.setLayout(l)
-        self._display_widget.setVisible(False)
 
         # endregion
         dock.setWidget(self._display_widget)
@@ -1145,12 +1154,7 @@ class WebQryAddon:
         QApplication.restoreOverrideCursor()
         for wi, web in enumerate(self.webs, ):
             page = self.pages[wi]
-            try:
-                page.loadFinished.disconnect()
-            except TypeError:
-                pass
             page.load(self.word)
-            page.loadFinished.connect(lambda s: web.reload)
             web.add_query_page(page)
 
     def bind_slots(self):
@@ -1177,7 +1181,6 @@ class WebQryAddon:
             return
         self._display_widget.setVisible(True)
         if self._first_show:
-            self.web.reload()
             self._first_show = False
         if not UserConfig.preload:
             self.start_pages()
