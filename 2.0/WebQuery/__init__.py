@@ -893,7 +893,7 @@ class ResizeButton(QPushButton):
         self.start_resize = False
         self.dock_widget = dock_widget
         self.setFixedWidth(10)
-        self.setToolTip("Press to change the width of this dock!")
+        self.setToolTip("Hold and Drag to change the width of this dock!")
 
     def mouseReleaseEvent(self, evt):
         self.start_resize = False
