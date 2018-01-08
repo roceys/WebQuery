@@ -1562,7 +1562,7 @@ class WebQryAddon:
         if SyncConfig.txt_edit_current_after_saving:
             aqt.dialogs.open("EditCurrent", mw)
         else:
-            tooltip("Saved image to current card: {}".format(txt), 5000)
+            tooltip(u"Saved image to current card: {}".format(txt), 5000)
 
     def save_img(self, img):
         """
