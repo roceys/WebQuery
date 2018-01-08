@@ -9,7 +9,6 @@ Created: 12/24/2017
 import json
 import random
 import re
-from copy import deepcopy
 from functools import partial
 from uuid import uuid4
 
@@ -232,6 +231,8 @@ class SyncConfig(metaclass=_MetaConfigObj):
     append_mode = False
     auto_save = False
 
+    txt_edit_current_after_saving = False
+
 
 class UserConfig(metaclass=_MetaConfigObj):
     class Meta:
@@ -401,10 +402,15 @@ class _WebView(QWebEngineView):
         else:
             super(_WebView, self).contextMenuEvent(evt)
 
+    @property
+    def selectedText(self):
+        return self._view.selectedText()
+
 
 class TxtOptionsMenu(QMenu):
     default_txt_field_changed = pyqtSignal(int)
-    txt_saving = pyqtSignal(str)
+    txt_saving = pyqtSignal(bool)
+    edit_current = pyqtSignal(bool)
 
     def __init__(self, parent):
 
@@ -412,10 +418,12 @@ class TxtOptionsMenu(QMenu):
         self.default_txt_action_grp = None
         self.default_txt_field_index = 1
 
-        self._selected_txt = self.selected_txt = ''
+        self.selected_txt = ''
         self.action_save_to_default = None
+        self.options_menu = None
 
         self.setup_other_actions()
+        self.setup_options_actions()
 
         # slots
         self.aboutToShow.connect(self.onAboutToShow)
@@ -424,13 +432,27 @@ class TxtOptionsMenu(QMenu):
     def set_selected(self, txt):
         self.selected_txt = txt
 
+    def setup_options_actions(self):
+        if self.options_menu:
+            return
+        self.options_menu = QMenu("Options", self)
+        action_open_editor = QAction("Trigger Edit", self.options_menu)
+        action_open_editor.setToolTip("Open editor of current note after saving.")
+        action_open_editor.setCheckable(True)
+        action_open_editor.setChecked(SyncConfig.txt_edit_current_after_saving)
+        action_open_editor.toggled.connect(lambda toggled: self.edit_current.emit(toggled))
+        self.options_menu.addAction(action_open_editor)
+
+        self.addMenu(self.options_menu)
+
     def setup_other_actions(self):
-        self.action_save_to_default = QAction("Save Text", self)
+        self.action_save_to_default = QAction("Save Text (T)", self)
+        self.action_save_to_default.setShortcut(QKeySequence("T"))
         self.addAction(self.action_save_to_default)
         self.action_save_to_default.triggered.connect(self.onSaving)
 
     def onSaving(self, triggered):
-        self.txt_saving.emit(self._selected_txt)
+        self.txt_saving.emit()
         self.selected_txt = ''
 
     def setup_txt_field(self, fld_names, selected_index=1):
@@ -472,10 +494,13 @@ class TxtOptionsMenu(QMenu):
         if self.action_save_to_default:
             self.action_save_to_default.setVisible(True if self.selected_txt else False)
             self.action_save_to_default.setText(
-                "Save to field [{}]".format(self.default_txt_field_index))
+                "Save to field [{}] (T)".format(self.default_txt_field_index))
+        if self.options_menu:
+            self.options_menu.setEnabled(False if self.selected_txt else True)
+            for child in self.options_menu.children():
+                child.setEnabled(False if self.selected_txt else True)
 
     def onAboutToHide(self):
-        self._selected_txt = deepcopy(self.selected_txt)
         self.selected_txt = ''
 
 
@@ -489,7 +514,7 @@ class OptionsMenu(QMenu):
         self.selected_img_index = 1
 
         # init objects before setting up
-        self.menu_img_options = None
+        self.menu_img_config = None
         self.menu_txt_options = txt_option_menu
         self.img_field_menu = None
         self.field_action_grp = None
@@ -536,19 +561,20 @@ class OptionsMenu(QMenu):
         self.addMenu(self.qry_field_menu)
 
     def setup_image_field(self, fld_names, selected_index=1):
-        if not self.menu_img_options:
-            self.menu_img_options = QMenu("Image Capture", self)
-            self.addMenu(self.menu_img_options)
+        if not self.menu_img_config:
+            self.menu_img_config = QMenu("Image Capture", self)
+            self.addMenu(self.menu_img_config)
 
             # region image options
+            menu_img_options = QMenu("Options", self.menu_img_config)
 
-            action_img_append_mode = QAction("Append Mode", self.menu_img_options)
+            action_img_append_mode = QAction("Append Mode", menu_img_options)
             action_img_append_mode.setCheckable(True)
             action_img_append_mode.setToolTip("Append Mode: Check this if you need captured image to be APPENDED "
                                               "to field instead of overwriting it")
             action_img_append_mode.setChecked(SyncConfig.append_mode)
 
-            action_img_auto_save = QAction("Auto Save", self.menu_img_options)
+            action_img_auto_save = QAction("Auto Save", menu_img_options)
             action_img_auto_save.setCheckable(True)
             action_img_auto_save.setToolTip("Auto-Save: If this is checked, image will be saved "
                                             "immediately once completed cropping.")
@@ -557,13 +583,15 @@ class OptionsMenu(QMenu):
             action_img_append_mode.toggled.connect(self.on_append_mode)
             action_img_auto_save.toggled.connect(self.on_auto_save)
 
-            self.menu_img_options.addAction(action_img_append_mode)
-            self.menu_img_options.addAction(action_img_auto_save)
+            menu_img_options.addAction(action_img_append_mode)
+            menu_img_options.addAction(action_img_auto_save)
 
             # endregion
 
+            self.menu_img_config.addMenu(menu_img_options)
+
         if not self.field_action_grp:
-            self.field_action_grp = QActionGroup(self.menu_img_options)
+            self.field_action_grp = QActionGroup(self.menu_img_config)
             self.field_action_grp.triggered.connect(self.field_action_triggered)
 
         if fld_names:
@@ -581,8 +609,8 @@ class OptionsMenu(QMenu):
                 selected_action.setChecked(True)
                 self.selected_img_index = selected_index
 
-        self.menu_img_options.addSeparator().setText("Fields")
-        self.menu_img_options.addActions(self.field_action_grp.actions())
+            self.menu_img_config.addSeparator().setText("Fields")
+            self.menu_img_config.addActions(self.field_action_grp.actions())
 
     def setup_option_actions(self):
 
@@ -593,7 +621,7 @@ class OptionsMenu(QMenu):
         # region general
         pix = QPixmap()
         pix.loadFromData(gear_bytes)
-        self.action_open_user_cfg = QAction("Config", self)
+        self.action_open_user_cfg = QAction("User Config", self)
         self.action_open_user_cfg.setIcon(QIcon(pix))
 
         # bind action slots
@@ -1138,6 +1166,7 @@ class WebQryAddon:
             self.options_menu.query_field_change.connect(self.qry_field_changed)
             assert isinstance(self.options_menu.menu_txt_options, TxtOptionsMenu)
             self.options_menu.menu_txt_options.txt_saving.connect(self.save_txt)
+            self.options_menu.menu_txt_options.edit_current.connect(self.edit_current)
             self.options_menu.menu_txt_options.default_txt_field_changed.connect(self.txt_field_changed)
 
     def hide_widget(self):
@@ -1230,12 +1259,21 @@ class WebQryAddon:
         SyncConfig.qry_field_map = _mp
         self.options_menu.setup_query_field(self.note.keys(), index)
 
-    def save_txt(self, txt):  # default_txt_field_index
+    def edit_current(self, toggled):
+        SyncConfig.txt_edit_current_after_saving = toggled
+
+    def save_txt(self, ):
+        txt = self.web.selectedText
+        if not txt:
+            return
         index = self.options_menu.menu_txt_options.default_txt_field_index
         self.note.fields[index] = txt
         self.card.flush()
         self.note.flush()
-        tooltip("Saved image to current card: {}".format(txt), 5000)
+        if SyncConfig.txt_edit_current_after_saving:
+            aqt.dialogs.open("EditCurrent", mw)
+        else:
+            tooltip("Saved image to current card: {}".format(txt), 5000)
 
     def save_img(self, img):
         """
