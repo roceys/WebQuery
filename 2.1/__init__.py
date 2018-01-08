@@ -1142,12 +1142,14 @@ class WebQryAddon:
         if not self.word:
             return
 
-        if UserConfig.preload:
-            self.start_pages()
         if not UserConfig.load_on_question:
             self.hide_widget()
         else:
             self.show_widget()
+
+        if UserConfig.preload:
+            self.start_pages()
+
         self.bind_slots()
 
     def start_pages(self):
