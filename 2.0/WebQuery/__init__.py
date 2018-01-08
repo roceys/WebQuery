@@ -9,6 +9,7 @@ Created: 12/24/2017
 import json
 import random
 import re
+from copy import deepcopy
 from functools import partial
 
 from anki.hooks import addHook
@@ -447,6 +448,7 @@ class SyncConfig:
     doc_size = (405, 808)
     image_field_map = {}
     qry_field_map = {}
+    txt_field_map = {}
     visible = True
     append_mode = False
     auto_save = False
@@ -526,9 +528,10 @@ class _Page(QWebPage):
 
 class _WebView(QWebView):
 
-    def __init__(self, parent):
+    def __init__(self, parent, txt_option_menu):
         super(_WebView, self).__init__(parent)
         self.qry_page = None
+        self.txt_option_menu = txt_option_menu
 
     def add_query_page(self, page):
         if not self.qry_page:
@@ -538,6 +541,13 @@ class _WebView(QWebView):
     def load_page(self):
         if self.qry_page:
             self.qry_page.load()
+
+    def contextMenuEvent(self, evt):
+        if self.selectedText():
+            self.txt_option_menu.set_selected(self.selectedText())
+            self.txt_option_menu.exec_(mw.cursor().pos())
+        else:
+            super(_WebView, self).contextMenuEvent(evt)
 
 
 class ImageLabel(QLabel):
@@ -605,29 +615,110 @@ class ImageLabel(QLabel):
         self.repaint()
 
 
-class OptionsMenu(QMenu):
-    field_changed = pyqtSignal(int)
-    query_field_change = pyqtSignal(int)
+class TxtOptionsMenu(QMenu):
+    default_txt_field_changed = pyqtSignal(int)
+    txt_saving = pyqtSignal(str)
 
     def __init__(self, parent):
+
+        super(TxtOptionsMenu, self).__init__("Text Capture", parent)
+        self.default_txt_action_grp = None
+        self.default_txt_field_index = 1
+
+        self._selected_txt = self.selected_txt = ''
+        self.action_save_to_default = None
+
+        self.setup_other_actions()
+
+        # slots
+        self.aboutToShow.connect(self.onAboutToShow)
+        self.aboutToHide.connect(self.onAboutToHide)
+
+    def set_selected(self, txt):
+        self.selected_txt = txt
+
+    def setup_other_actions(self):
+        self.action_save_to_default = QAction("Save Text", self)
+        self.addAction(self.action_save_to_default)
+        self.action_save_to_default.triggered.connect(self.onSaving)
+
+    def onSaving(self, triggered):
+        self.txt_saving.emit(self._selected_txt)
+        self.selected_txt = ''
+
+    def setup_txt_field(self, fld_names, selected_index=1):
+
+        if not self.default_txt_action_grp:
+            self.default_txt_action_grp = QActionGroup(self)
+            self.default_txt_action_grp.triggered.connect(self.default_txt_action_triggered)
+
+        if fld_names:
+            list(map(
+                self.default_txt_action_grp.removeAction,
+                self.default_txt_action_grp.actions()
+            ))
+            added_actions = list(map(
+                self.default_txt_action_grp.addAction,
+                fld_names
+            ))
+            if added_actions:
+                list(map(lambda action: action.setCheckable(True), added_actions))
+                selected_action = added_actions[selected_index]
+                selected_action.setChecked(True)
+                self.default_txt_field_index = selected_index
+        self.addSeparator().setText("Fields")
+        self.addActions(self.default_txt_action_grp.actions())
+
+    def default_txt_action_triggered(self, action):
+        """
+
+        :type action: QAction
+        :return:
+        """
+        self.default_txt_field_index = self.default_txt_action_grp.actions().index(action)
+        action.setChecked(True)
+        self.default_txt_field_changed.emit(self.default_txt_field_index)
+        if self.action_save_to_default.isVisible():
+            self.action_save_to_default.trigger()
+
+    def onAboutToShow(self):
+        if self.action_save_to_default:
+            self.action_save_to_default.setVisible(True if self.selected_txt else False)
+            self.action_save_to_default.setText(
+                "Save to field [{}]".format(self.default_txt_field_index))
+
+    def onAboutToHide(self):
+        self._selected_txt = deepcopy(self.selected_txt)
+        self.selected_txt = ''
+
+
+class OptionsMenu(QMenu):
+    img_field_changed = pyqtSignal(int)
+    query_field_change = pyqtSignal(int)
+
+    def __init__(self, parent, txt_option_menu):
         super(OptionsMenu, self).__init__('Options', parent)
 
-        self.fld_names = []
-        self.selected_index = 1
+        self.selected_img_index = 1
 
         # init objects before setting up
-        self.field_menu = None
+        self.menu_img_options = None
+        self.menu_txt_options = txt_option_menu
+        self.img_field_menu = None
         self.field_action_grp = None
         self.qry_field_menu = None
         self.qry_field_action_grp = None
+        self.txt_field_action_grp = None
 
         # setup option actions
         self.setup_all()
 
     def setup_all(self):
-        self.setup_option_actions()
+
         self.setup_image_field([])
+        self.addMenu(self.menu_txt_options)
         self.setup_query_field([])
+        self.setup_option_actions()
 
     def setup_query_field(self, fld_names, selected_index=0):
         self.query_fld_names = fld_names
@@ -659,65 +750,72 @@ class OptionsMenu(QMenu):
         self.addMenu(self.qry_field_menu)
 
     def setup_image_field(self, fld_names, selected_index=1):
-        self.fld_names = fld_names
-        if not self.field_menu:
-            pix = QPixmap()
-            pix.loadFromData(items_bytes)
-            icon = QIcon(pix)
-            self.field_menu = QMenu("Image Field", self)
-            self.field_menu.setIcon(icon)
+        if not self.menu_img_options:
+            self.menu_img_options = QMenu("Image Capture", self)
+            self.addMenu(self.menu_img_options)
+
+            # region image options
+
+            action_img_append_mode = QAction("Append Mode", self.menu_img_options)
+            action_img_append_mode.setCheckable(True)
+            action_img_append_mode.setToolTip("Append Mode: Check this if you need captured image to be APPENDED "
+                                              "to field instead of overwriting it")
+            action_img_append_mode.setChecked(SyncConfig.append_mode)
+
+            action_img_auto_save = QAction("Auto Save", self.menu_img_options)
+            action_img_auto_save.setCheckable(True)
+            action_img_auto_save.setToolTip("Auto-Save: If this is checked, image will be saved "
+                                            "immediately once completed cropping.")
+            action_img_auto_save.setChecked(SyncConfig.auto_save)
+
+            action_img_append_mode.toggled.connect(self.on_append_mode)
+            action_img_auto_save.toggled.connect(self.on_auto_save)
+
+            self.menu_img_options.addAction(action_img_append_mode)
+            self.menu_img_options.addAction(action_img_auto_save)
+
+            # endregion
+
         if not self.field_action_grp:
-            self.field_action_grp = QActionGroup(self.field_menu)
+            self.field_action_grp = QActionGroup(self.menu_img_options)
             self.field_action_grp.triggered.connect(self.field_action_triggered)
-        if self.fld_names:
+
+        if fld_names:
             list(map(
                 self.field_action_grp.removeAction,
                 self.field_action_grp.actions()
             ))
             added_actions = list(map(
                 self.field_action_grp.addAction,
-                self.fld_names
+                fld_names
             ))
             if added_actions:
                 list(map(lambda action: action.setCheckable(True), added_actions))
                 selected_action = added_actions[selected_index]
                 selected_action.setChecked(True)
-                self.selected_index = selected_index
-                # self.setText(selected_action.text())
+                self.selected_img_index = selected_index
 
-        self.field_menu.addActions(self.field_action_grp.actions())
-        self.addSeparator().setText("Fields")
-        self.addMenu(self.field_menu)
+        self.menu_img_options.addSeparator().setText("Fields")
+        self.menu_img_options.addActions(self.field_action_grp.actions())
 
     def setup_option_actions(self):
-        # setup actions
-        self.action_append_mode = QAction("Append Mode", self)
-        self.action_append_mode.setCheckable(True)
-        self.action_append_mode.setToolTip("Append Mode: Check this if you need captured image to be APPENDED "
-                                           "to field instead of overwriting it")
-        self.action_append_mode.setChecked(SyncConfig.append_mode)
 
-        self.action_auto_save = QAction("Auto-Save", self)
-        self.action_auto_save.setCheckable(True)
-        self.action_auto_save.setToolTip("Auto-Save: If this is checked, image will be saved "
-                                         "immediately once completed cropping.")
-        self.action_auto_save.setChecked(SyncConfig.auto_save)
+        # region txt options
 
-        self.action_open_user_cfg = QAction("Config", self)
+        # endregion
+
+        # region general
         pix = QPixmap()
         pix.loadFromData(gear_bytes)
+        self.action_open_user_cfg = QAction("Config", self)
         self.action_open_user_cfg.setIcon(QIcon(pix))
 
         # bind action slots
-        self.action_append_mode.toggled.connect(self.on_append_mode)
-        self.action_auto_save.toggled.connect(self.on_auto_save)
         self.action_open_user_cfg.triggered.connect(lambda: os.startfile(UserConfig.media_json_file))
 
-        # add actions to menu
-        self.addActions([
-            ac for ac in map(lambda nm: getattr(self, nm),
-                             [att for att in dir(self) if att.startswith("action_")])
-        ])
+        self.addAction(self.action_open_user_cfg)
+
+        # endregion
 
     def qry_field_action_triggered(self, action):
         """
@@ -736,10 +834,10 @@ class OptionsMenu(QMenu):
         :type action: QAction
         :return:
         """
-        self.selected_index = self.field_action_grp.actions().index(action)
+        self.selected_img_index = self.field_action_grp.actions().index(action)
         action.setChecked(True)
         # self.setText(self.field_action_grp.actions()[self.selected_index].text())
-        self.field_changed.emit(self.selected_index)
+        self.img_field_changed.emit(self.selected_img_index)
 
     def on_append_mode(self, checked):
         SyncConfig.append_mode = True if checked else False
@@ -750,8 +848,6 @@ class OptionsMenu(QMenu):
 
 # noinspection PyMethodMayBeStatic
 class CaptureOptionButton(QPushButton):
-    field_changed = pyqtSignal(int)
-    query_field_change = pyqtSignal(int)
 
     def __init__(self, parent, options_menu, icon=None):
         if icon:
@@ -763,10 +859,6 @@ class CaptureOptionButton(QPushButton):
         # self.setFlat(True)
         self.setToolTip("Capture Options")
 
-        # setup menu
-        # self.menu = options_menu #OptionsMenu(self)
-        # self.menu.field_changed.connect(lambda x: self.field_changed.emit(x))
-        # self.menu.query_field_change.connect(lambda x: self.query_field_change.emit(x))
         self.setMenu(options_menu)
         self.setText('Options')
 
@@ -790,7 +882,7 @@ class ResizeButton(QPushButton):
             new_width = QApplication.desktop().rect().right() - QCursor().pos().x()
             self.dock_widget.setFixedWidth(new_width)
             doc_size = (new_width, self.dock_widget.height())
-            SyncConfigdoc_size = doc_size
+            SyncConfig.doc_size = doc_size
             self.dock_widget.resize(QSize(new_width, self.dock_widget.height()))
         evt.accept()
 
@@ -814,7 +906,7 @@ class WebQueryWidget(QWidget):
         super(WebQueryWidget, self).__init__(parent)
 
         # all widgets
-        self._view = _WebView(self)
+        self._view = _WebView(self, options_menu.menu_txt_options)
         self.lable_img_capture = ImageLabel()
         self.lable_img_capture.mouse_released.connect(self.cropped)
         self.lable_img_capture.canceled.connect(self.crop_canceled)
@@ -1109,7 +1201,7 @@ class WebQryAddon:
             action.setShortcut(QKeySequence("ALT+W"))
             self.main_menu.addAction(action)
             action.triggered.connect(self.toggle)
-            self.options_menu = OptionsMenu(self.main_menu)
+            self.options_menu = OptionsMenu(self.main_menu, TxtOptionsMenu(self.main_menu))
             self.main_menu.addMenu(self.options_menu)
             mw.form.menuTools.addMenu(self.main_menu)
 
@@ -1198,7 +1290,8 @@ class WebQryAddon:
         available_urls = [url for i, (n, url) in enumerate(UserConfig.provider_urls)
                           if i not in self.model_hidden_tab_index]
         self.webs = list(
-            map(lambda x: WebQueryWidget(dock, self.options_menu), range(available_urls.__len__()))
+            map(lambda x: WebQueryWidget(dock, self.options_menu),
+                range(available_urls.__len__()))
         )
         self.pages = list(
             map(lambda params: _Page(parent=self.webs[params[0]], provider_url=params[1]),
@@ -1246,28 +1339,41 @@ class WebQryAddon:
             return
         if not self.word:
             return
+
         if UserConfig.preload:
             self.start_pages()
         if not UserConfig.load_on_question:
             self.hide_widget()
         else:
             self.show_widget()
+        self.bind_slots()
 
     def start_pages(self):
         QApplication.restoreOverrideCursor()
         for wi, web in enumerate(self.webs, ):
             page = self.pages[wi]
+            try:
+                page.loadFinished.disconnect()
+            except TypeError:
+                pass
             page.loadFinished.connect(lambda s: web.reload)
             page.load(self.word)
             web.add_query_page(page)
-            if self.reviewer:
-                image_field = SyncConfig.image_field_map.get(str(self.note.mid), 1)
-                qry_field = SyncConfig.qry_field_map.get(str(self.note.mid), 0)
-                items = [(f['name'], ord) for ord, f in sorted(self.note._fmap.values())]
-                self.options_menu.setup_image_field([i for i, o in items], image_field)
-                self.options_menu.setup_query_field([i for i, o in items], qry_field)
-                self.options_menu.field_changed.connect(self.img_field_changed)
-                self.options_menu.query_field_change.connect(self.qry_field_changed)
+
+    def bind_slots(self):
+        if self.reviewer:
+            image_field = SyncConfig.image_field_map.get(str(self.note.mid), 1)
+            qry_field = SyncConfig.qry_field_map.get(str(self.note.mid), 0)
+            items = [(f['name'], ord) for ord, f in sorted(self.note._fmap.values())]
+            self.options_menu.setup_image_field([i for i, o in items], image_field)
+            self.options_menu.setup_query_field([i for i, o in items], qry_field)
+            self.options_menu.menu_txt_options.setup_txt_field([i for i, o in items],
+                                                               SyncConfig.txt_field_map.get(str(self.note.mid), 1))
+            self.options_menu.img_field_changed.connect(self.img_field_changed)
+            self.options_menu.query_field_change.connect(self.qry_field_changed)
+            assert isinstance(self.options_menu.menu_txt_options, TxtOptionsMenu)
+            self.options_menu.menu_txt_options.txt_saving.connect(self.save_txt)
+            self.options_menu.menu_txt_options.default_txt_field_changed.connect(self.txt_field_changed)
 
     def hide_widget(self):
         self._display_widget.setVisible(False)
@@ -1345,6 +1451,16 @@ class WebQryAddon:
         items = [(f['name'], ord) for ord, f in sorted(self.note._fmap.values())]
         self.options_menu.setup_image_field([i for i, o in items], index)
 
+    def txt_field_changed(self, index):
+        if index == -1:
+            return
+        _mp = SyncConfig.txt_field_map
+        _mp[str(self.note.mid)] = index
+        SyncConfig.txt_field_map = _mp
+
+        items = [(f['name'], ord) for ord, f in sorted(self.note._fmap.values())]
+        self.options_menu.menu_txt_options.setup_txt_field([i for i, o in items], index)
+
     def qry_field_changed(self, index):
         if index == -1:
             return
@@ -1355,6 +1471,13 @@ class WebQryAddon:
         items = [(f['name'], ord) for ord, f in sorted(self.note._fmap.values())]
         self.options_menu.setup_query_field([i for i, o in items], index)
 
+    def save_txt(self, txt):  # default_txt_field_index
+        index = self.options_menu.menu_txt_options.default_txt_field_index
+        self.note.fields[index] = txt
+        self.card.flush()
+        self.note.flush()
+        tooltip("Saved image to current card: {}".format(txt), 5000)
+
     def save_img(self, img):
         """
 
@@ -1364,7 +1487,7 @@ class WebQryAddon:
         img = img.convertToFormat(QImage.Format_RGB32, Qt.ThresholdDither | Qt.AutoColor)
         if not self.reviewer:
             return
-        fld_index = self.options_menu.selected_index
+        fld_index = self.options_menu.selected_img_index
         anki_label = '<img src="{}">'
         fn = "web_qry_{}.jpg".format(uuid4().hex.upper())
         if SyncConfig.append_mode:
