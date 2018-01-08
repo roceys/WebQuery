@@ -540,7 +540,7 @@ class _Page(QWebPage):
     def _events_loop(self, wait=None):
         if wait is None:
             wait = self.event_looptime
-        QApplication.processEvents()
+        QApplication.instance().processEvents()
         time.sleep(wait)
 
     def _on_load_finished(self, successful):
