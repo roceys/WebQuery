@@ -21,11 +21,58 @@ Use the installation code: 627484806
 2. Select your note field and save
 3. Cropped images will be saved to your resource folder of the profile 
 
+### Capture Text into Note Field
+Select text in the web and right click to show context menu and save.
+
+## User Configurations
+In the "Options" menu open the configuration dialog:
+
+```json
+{
+    "image_quality": 50,
+    "load_on_question": false,
+    "preload": true,
+    "provider_urls": [
+        [
+            "Bing",
+            "https://www.bing.com/images/search?q=%s"
+        ],
+        [
+            "Wiki",
+            "https://en.wikipedia.org/wiki/?search=%s"
+        ],
+        [
+            "WordRoot",
+            "http://www.youdict.com/root/search?wd=%s~~#article"
+        ]
+    ]
+}
+```
+
+- **image_quality**: Saved image quality, up to 100, default 50.
+- **load_on_question**": change to false if you need web to be queried **/ONLY/** on answers.
+- **preload**: Query web even it's invisible.
+
 ### Provider URL
 This is an URL string you can customize in your settings. By default, 
 This addon provide a value for Wikipedia: http://en.wikipedia.org/wiki/wiki.html?search=%s
 
 Please note the "%s" at the end for "search=%s" which mean the parameter where addon will fill during the review.
+
+### Extract Web Elements (CSS Selectors)
+Although this addon is powerful enough, but sometimes we need to reference parts
+ the web's information and others are not wanted, 
+ in this case you can use [Standard CSS2 selector](https://www.w3.org/TR/REC-CSS2/selector.html#q1) 
+ syntax to query partially.
+
+**Append** selectors at the last of your provider url, separate by "~~":
+```json
+[
+    "WordRoot",
+    "http://www.youdict.com/root/search?wd=%s~~#article"
+]
+```
+Above provider url only return the tag(ID = article) HTML in Web Query.
 
 #### Get Provider URL
 You would be able to search the web for more provider URL patterns, or make your own just from your browser address bar:
@@ -57,7 +104,7 @@ You would be able to search the web for more provider URL patterns, or make your
 #### Toggle Tab Visibility
 Just in case you have plenty of url providers and there must to be many tabs on the widget, you can set visibilities of those tabs to each **NOTE TYPE**, by default they are all turned on for all.
 
-1. Goto menu "Tool" > "Manage Note Types" > Selecte one note
+1. Go to menu "Tool" > "Manage Note Types" > Selecte one note
 2. Click on button "Web Query Tab Visibility"
 3. Check the visibilities for each of the provider url:
 
