@@ -9,17 +9,16 @@ Created: 12/24/2017
 import json
 import random
 import re
+import time
 from functools import partial
 
-import time
-from PyQt4.QtNetwork import QNetworkRequest, QNetworkAccessManager
+from PyQt4.QtNetwork import QNetworkRequest
 from anki.hooks import addHook
 # noinspection PyArgumentList
 from anki.lang import _
 from aqt import *
-from aqt.main import AnkiQt
 from aqt.models import Models
-from aqt.utils import tooltip, restoreGeom
+from aqt.utils import tooltip, restoreGeom, showInfo
 
 from .uuid import uuid4
 
@@ -874,16 +873,7 @@ class OptionsMenu(QMenu):
         self.action_open_user_cfg.setIcon(QIcon(pix))
 
         # bind action slots
-        def open_file(path):
-            if aqt.isWin:
-                os.startfile(path)
-            else:
-                QInputDialog.getText(self.parent(), "Config File",
-                                     "Using default text editor to open below file:",
-                                     QLineEdit.Normal,
-                                     unicode(path))
-
-        self.action_open_user_cfg.triggered.connect(lambda: open_file(UserConfig.media_json_file))
+        self.action_open_user_cfg.triggered.connect(lambda: ConfigEditor(mw, UserConfig.media_json_file).exec_())
 
         self.addAction(self.action_open_user_cfg)
 
@@ -957,6 +947,67 @@ class ResizeButton(QPushButton):
             SyncConfig.doc_size = doc_size
             self.dock_widget.resize(QSize(new_width, self.dock_widget.height()))
         evt.accept()
+
+
+class ConfigEditor(QDialog):
+    class Ui_Dialog(object):
+        def setupUi(self, Dialog):
+            Dialog.setObjectName("Dialog")
+            Dialog.setWindowModality(Qt.ApplicationModal)
+            Dialog.resize(631, 521)
+            self.verticalLayout = QVBoxLayout(Dialog)
+            self.verticalLayout.setObjectName("verticalLayout")
+            self.editor = QPlainTextEdit(Dialog)
+            sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            sizePolicy.setHorizontalStretch(0)
+            sizePolicy.setVerticalStretch(3)
+            sizePolicy.setHeightForWidth(self.editor.sizePolicy().hasHeightForWidth())
+            self.editor.setSizePolicy(sizePolicy)
+            self.editor.setObjectName("editor")
+            self.verticalLayout.addWidget(self.editor)
+            self.buttonBox = QDialogButtonBox(Dialog)
+            self.buttonBox.setOrientation(Qt.Horizontal)
+            self.buttonBox.setStandardButtons(
+                QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
+            self.buttonBox.setObjectName("buttonBox")
+            self.verticalLayout.addWidget(self.buttonBox)
+
+            self.retranslateUi(Dialog)
+            self.buttonBox.accepted.connect(Dialog.accept)
+            self.buttonBox.rejected.connect(Dialog.reject)
+            QMetaObject.connectSlotsByName(Dialog)
+
+        def retranslateUi(self, Dialog):
+            _translate = QCoreApplication.translate
+            Dialog.setWindowTitle(_("Configuration"))
+
+    def __init__(self, dlg, json_file):
+        super(ConfigEditor, self).__init__(dlg)
+        self.json = json_file
+        self.conf = None
+        self.form = self.Ui_Dialog()
+        self.form.setupUi(self)
+        self.updateText()
+        self.show()
+
+    def updateText(self):
+        with open(self.json, "r") as f:
+            self.conf = json.load(f)
+        self.form.editor.setPlainText(
+            json.dumps(self.conf, sort_keys=True, indent=4, separators=(',', ': ')))
+
+    def accept(self):
+        txt = self.form.editor.toPlainText()
+        try:
+            self.conf = json.loads(txt)
+        except Exception as e:
+            showInfo(_("Invalid configuration: ") + repr(e))
+            return
+
+        with open(self.json, "w") as f:
+            json.dump(self.conf, f)
+
+        super(ConfigEditor, self).accept()
 
 
 class WebQueryWidget(QWidget):
