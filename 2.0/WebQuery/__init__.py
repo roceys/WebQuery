@@ -547,6 +547,13 @@ class _Page(QWebPage):
 
         self.mainFrame().load(req)
         self._wait_load(10)
+        if self.selector:
+            html = self.mainFrame().evaluateJavaScript("$('{}').html()".format(self.selector))
+            if html:
+                self.mainFrame().setHtml(html, QUrl(url))
+                self.has_selector_contents.emit(True)
+                return
+        self.has_selector_contents.emit(False)
 
     def _events_loop(self, wait=None):
         if wait is None:
@@ -556,12 +563,6 @@ class _Page(QWebPage):
 
     def _on_load_finished(self, successful):
         self._load_status = successful
-        if self.selector:
-            item = self.mainFrame().findFirstElement(self.selector)
-            if item:
-                self.mainFrame().setHtml(item.toOuterXml())
-                self.has_selector_contents.emit(True)
-            self.has_selector_contents.emit(False)
 
     def _wait_load(self, timeout=None):
         self._events_loop(0.0)
@@ -1502,10 +1503,20 @@ class WebQryAddon:
         QApplication.restoreOverrideCursor()
         for wi, web in enumerate(self.webs, ):
             page = self.pages[wi]
+            if page.selector:
+                page.has_selector_contents.connect(partial(self.onSelectorWeb, wi))
             page.load(self.word)
             web.add_query_page(page)
-            if isinstance(self._display_widget, QTabWidget):
-                page.has_selector_contents.connect(lambda has: self._display_widget.setTabEnabled(wi, has))
+
+    def onSelectorWeb(self, wi, has):
+        if isinstance(self._display_widget, QTabWidget):
+            tab = self._display_widget.widget(wi)
+            tab.setVisible(has)
+            self._display_widget.setTabEnabled(wi, has)
+            if not has:
+                tab.setToolTip("No Contents")
+            else:
+                tab.setToolTip("")
 
     def bind_slots(self):
         if self.reviewer:

@@ -330,11 +330,13 @@ class _ImageLabel(QLabel):
 
 
 class _Page(QWebEnginePage):
+    has_selector_contents = pyqtSignal(bool)
+
     def __init__(self, parent, keyword=None, provider_url=''):
         super(_Page, self).__init__(parent)
         self.clicked_img_url = None
         self.keyword = keyword
-        self.provider_url = provider_url
+        self._provider_url = provider_url
 
         # profile set
         self.profile.setHttpUserAgent(self.agent)
@@ -351,17 +353,19 @@ class _Page(QWebEnginePage):
         return 'Mozilla/5.0 (iPhone; U; CPU like Mac OS X) ' \
                'AppleWebKit/420.1 (KHTML, like Gecko) Version/3.0 Mobile/4A93 '
 
-    # noinspection PyArgumentList
-    def get_url(self):
-        return QUrl(self.provider_url % self.keyword)
+    @property
+    def provider(self):
+        return self._provider_url
 
-    def load(self, keyword):
-        self.keyword = keyword
-        if not keyword:
-            url = QUrl('about:blank')
-        else:
-            url = self.get_url()
-        super(_Page, self).load(url)
+    @provider.setter
+    def provider(self, val):
+        self._provider_url = val
+
+    @property
+    def selector(self):
+        if self.provider.find("~~") >= 0:
+            return self.provider[self.provider.find("~~") + 2:]
+        return ''
 
     @property
     def profile(self):
@@ -374,6 +378,51 @@ class _Page(QWebEnginePage):
     @property
     def settings(self):
         return super(_Page, self).settings()
+
+    # noinspection PyArgumentList
+    def get_url(self):
+        # remove selector
+        url = self.provider % self.keyword
+        if url.find("~~") >= 0:
+            url = url[:url.find("~~")]
+        return QUrl(url)
+
+    def load(self, keyword):
+        self.keyword = keyword
+        if not keyword:
+            url = QUrl('about:blank')
+        else:
+            url = self.get_url()
+        self.loadFinished.connect(self.on_loadFinished)
+        super(_Page, self).load(url)
+
+    def on_loadFinished(self, bool):
+        if not bool:
+            return
+        if self.selector:
+            def found(html):
+                if not html:
+                    return
+                self.setHtml(html, self.get_url())
+                self.has_selector_contents.emit(True)
+
+            self.runJavaScript("$('#article').html()", found)
+            return
+        self.has_selector_contents.emit(False)
+
+
+@property
+def profile(self):
+    """
+
+    :rtype: QWebEngineProfile
+    """
+    return super(_Page, self).profile()
+
+
+@property
+def settings(self):
+    return super(_Page, self).settings()
 
 
 class _WebView(QWebEngineView):
@@ -399,14 +448,13 @@ class _WebView(QWebEngineView):
         else:
             super(_WebView, self).contextMenuEvent(evt)
 
-    @property
     def selectedText(self):
-        return self._view.selectedText()
+        return self.page().selectedText()
 
 
 class TxtOptionsMenu(QMenu):
     default_txt_field_changed = pyqtSignal(int)
-    txt_saving = pyqtSignal(bool)
+    txt_saving = pyqtSignal()
     edit_current = pyqtSignal(bool)
 
     def __init__(self, parent):
@@ -916,6 +964,10 @@ class WebQueryWidget(QWidget):
     def crop_canceled(self):
         self.return_button.click()
 
+    @property
+    def selectedText(self):
+        return self._view.selectedText()
+
 
 class ModelDialog(aqt.models.Models):
     def __init__(self, mw, parent=None, fromMain=False):
@@ -1206,8 +1258,20 @@ class WebQryAddon:
         QApplication.restoreOverrideCursor()
         for wi, web in enumerate(self.webs, ):
             page = self.pages[wi]
+            if page.selector:
+                page.has_selector_contents.connect(partial(self.onSelectorWeb, wi))
             page.load(self.word)
             web.add_query_page(page)
+
+    def onSelectorWeb(self, wi, has):
+        if isinstance(self._display_widget, QTabWidget):
+            tab = self._display_widget.widget(wi)
+            tab.setVisible(has)
+            self._display_widget.setTabEnabled(wi, has)
+            if not has:
+                tab.setToolTip("No Contents")
+            else:
+                tab.setToolTip("")
 
     def bind_slots(self):
         if self.reviewer:
