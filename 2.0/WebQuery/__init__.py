@@ -498,6 +498,8 @@ class ModelConfig:
 
 
 class _Page(QWebPage):
+    has_selector_contents = pyqtSignal(bool)
+
     def __init__(self, parent, keyword=None, provider_url=''):
         super(_Page, self).__init__(parent)
         self.clicked_img_url = None
@@ -520,9 +522,19 @@ class _Page(QWebPage):
     def provider(self, val):
         self._provider_url = val
 
+    @property
+    def selector(self):
+        if self.provider.find("~~") >= 0:
+            return self.provider[self.provider.find("~~") + 2:]
+        return ''
+
     # noinspection PyArgumentList
     def get_url(self):
-        return QUrl(self.provider % self.keyword)
+        # remove selector
+        url = self.provider % self.keyword
+        if url.find("~~") >= 0:
+            url = url[:url.find("~~")]
+        return QUrl(url)
 
     def load(self, keyword):
         self.keyword = keyword
@@ -544,6 +556,12 @@ class _Page(QWebPage):
 
     def _on_load_finished(self, successful):
         self._load_status = successful
+        if self.selector:
+            item = self.mainFrame().findFirstElement(self.selector)
+            if item:
+                self.mainFrame().setHtml(item.toOuterXml())
+                self.has_selector_contents.emit(True)
+            self.has_selector_contents.emit(False)
 
     def _wait_load(self, timeout=None):
         self._events_loop(0.0)
@@ -1486,6 +1504,8 @@ class WebQryAddon:
             page = self.pages[wi]
             page.load(self.word)
             web.add_query_page(page)
+            if isinstance(self._display_widget, QTabWidget):
+                page.has_selector_contents.connect(lambda has: self._display_widget.setTabEnabled(wi, has))
 
     def bind_slots(self):
         if self.reviewer:
