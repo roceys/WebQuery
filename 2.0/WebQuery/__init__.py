@@ -91,7 +91,7 @@ class _MetaConfigObj(type):
         meta = attributes.get('Meta', type("Meta", (), {}))
         # meta values
         setattr(meta, "config_dict", config_dict)
-        setattr(meta, "__StoreLocation__", getattr(meta, "__StoreLocation__", 0))
+        setattr(meta, "__store_location__", getattr(meta, "__store_location__", 0))
         setattr(meta, "__config_file__", getattr(meta, "__config_file__", "config.json"))
 
         _MetaConfigObj.metas[c.__name__] = meta
@@ -102,9 +102,11 @@ class _MetaConfigObj(type):
 
         mcs.attributes = attributes  # attributes that is the configuration items
 
-        setattr(c, "media_json_file", mcs.MediaConfigJsonFile("_{}_{}".format(_MetaConfigObj.AddonModelName(),
-                                                                              _MetaConfigObj.metas[
-                                                                                  name].__config_file__).lower()))
+        if _MetaConfigObj.metas[name].__store_location__ == _MetaConfigObj.StoreLocation.MediaFolder:
+            if not _MetaConfigObj.metas[name].__config_file__:
+                raise Exception("If StoreLocation is Media Folder, __config_file__ must be provided!")
+            setattr(c, "media_json_file",
+                    mcs.MediaConfigJsonFile("_{}".format(_MetaConfigObj.metas[name].__config_file__).lower()))
 
         return c
 
@@ -112,7 +114,7 @@ class _MetaConfigObj(type):
         if item == "meta":
             return _MetaConfigObj.metas[cls.__name__]
         else:
-            load_config = lambda: cls.get_config(cls.metas[cls.__name__].__StoreLocation__)
+            load_config = lambda: cls.get_config(cls.metas[cls.__name__].__store_location__)
             config_obj = load_config()
             return config_obj.get(item)
 
@@ -124,9 +126,9 @@ class _MetaConfigObj(type):
         :return:
         """
         try:
-            config_obj = cls.get_config(cls.metas[cls.__name__].__StoreLocation__)
+            config_obj = cls.get_config(cls.metas[cls.__name__].__store_location__)
             config_obj[key] = value
-            store_location = cls.metas[cls.__name__].__StoreLocation__
+            store_location = cls.metas[cls.__name__].__store_location__
             if store_location == cls.StoreLocation.AddonFolder:
                 if cls.IsAnki21:
                     mw.addonManager.writeConfig(cls.AddonModelName, config_obj)
@@ -195,7 +197,7 @@ class _MetaConfigObj(type):
         if _MetaConfigObj.IsAnki21():
             _ = os.path.join(mw.addonManager.addonsFolder(), _MetaConfigObj.AddonModelName())
         else:
-            _ = os.path.join(mw.pm.addonFolder(), _MetaConfigObj.AddonModelName())
+            _ = mw.pm.addonFolder()
         if aqt.isWin:
             _ = _.encode(aqt.sys.getfilesystemencoding()).decode("utf-8")
         return _.lower()
@@ -444,7 +446,8 @@ class SyncConfig:
     __metaclass__ = _MetaConfigObj
 
     class Meta:
-        __StoreLocation__ = _MetaConfigObj.StoreLocation.MediaFolder
+        __store_location__ = _MetaConfigObj.StoreLocation.MediaFolder
+        __config_file__ = "webquery_config.json"
 
     doc_size = (405, 808)
     image_field_map = {}
@@ -461,7 +464,7 @@ class ProfileConfig:
     __metaclass__ = _MetaConfigObj
 
     class Meta:
-        __StoreLocation__ = _MetaConfigObj.StoreLocation.Profile
+        __store_location__ = _MetaConfigObj.StoreLocation.Profile
 
     is_first_webq_run = True
 
@@ -470,8 +473,8 @@ class UserConfig:
     __metaclass__ = _MetaConfigObj
 
     class Meta:
-        __StoreLocation__ = _MetaConfigObj.StoreLocation.MediaFolder
-        __config_file__ = "user_cfg.json"
+        __store_location__ = _MetaConfigObj.StoreLocation.MediaFolder
+        # __config_file__ = "webquery_user_cfg.json"
 
     load_on_question = True
     image_quality = 50
@@ -486,8 +489,8 @@ class ModelConfig:
     __metaclass__ = _MetaConfigObj
 
     class Meta:
-        __StoreLocation__ = _MetaConfigObj.StoreLocation.MediaFolder
-        __config_file__ = "model_cfg.json"
+        __store_location__ = _MetaConfigObj.StoreLocation.MediaFolder
+        __config_file__ = "webquery_model_cfg.json"
 
     visibility = {}  # MID: [ { PROVIDER URL NAME: VISIBLE }]
 
