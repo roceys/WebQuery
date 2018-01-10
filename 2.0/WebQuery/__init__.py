@@ -13,9 +13,11 @@ import time
 from functools import partial
 
 from PyQt4.QtNetwork import QNetworkRequest
+from anki.cards import Card
 from anki.hooks import addHook
 # noinspection PyArgumentList
 from anki.lang import _
+from anki.notes import Note
 from aqt import *
 from aqt.models import Models
 from aqt.utils import tooltip, restoreGeom, showInfo
@@ -160,12 +162,12 @@ class _MetaConfigObj(type):
             with open(json_file, 'r') as ff:
                 return json.load(ff)
 
-        disk_config_obj = {}
         if store_location == _MetaConfigObj.StoreLocation.Profile:
             if _MetaConfigObj.IsAnki21():
                 disk_config_obj = mw.pm.profile
             else:
                 disk_config_obj = mw.pm.meta
+            cls.config_dict.update(disk_config_obj)
         elif store_location == _MetaConfigObj.StoreLocation.AddonFolder:
             # ensure json file
             obj = _get_json_dict(_MetaConfigObj.ConfigJsonFile())
@@ -174,9 +176,12 @@ class _MetaConfigObj(type):
                 disk_config_obj = mw.addonManager.getConfig(_MetaConfigObj.AddonModelName())
             else:
                 disk_config_obj = obj
+            cls.config_dict.update(disk_config_obj)
         elif store_location == _MetaConfigObj.StoreLocation.MediaFolder:
             disk_config_obj = _get_json_dict(cls.media_json_file)
-        cls.config_dict.update(disk_config_obj)
+            cls.config_dict.update(disk_config_obj)
+            with open(cls.media_json_file, "w") as f:
+                json.dump(cls.config_dict, f)
         return cls.config_dict
 
     @staticmethod
@@ -483,6 +488,7 @@ class UserConfig:
         ("Wiki", "https://en.wikipedia.org/wiki/?search=%s"),
     ]
     preload = True
+    load_when_ivl = ">=0"
 
 
 class ModelConfig:
@@ -1325,8 +1331,8 @@ class WebQryAddon:
         # others
         addHook("showQuestion", self.start_query)
         addHook("showAnswer", self.show_widget)
-        addHook("deckClosing", self.hide)
-        addHook("reviewCleanup", self.hide)
+        addHook("deckClosing", self.destroy_dock)
+        addHook("reviewCleanup", self.destroy_dock)
         addHook("profileLoaded", self.profileLoaded)
 
     def cur_tab_index_changed(self, tab_index):
@@ -1489,7 +1495,11 @@ class WebQryAddon:
 
         return dock
 
-    def start_query(self):
+    def start_query(self, from_toggle=False):
+        if (not from_toggle) and (not eval(str(self.card.ivl) + UserConfig.load_when_ivl)):
+            self.destroy_dock()
+            return
+
         if not self.ensure_dock():
             return
         if not self.word:
@@ -1541,27 +1551,39 @@ class WebQryAddon:
             self.options_menu.menu_txt_options.default_txt_field_changed.connect(self.txt_field_changed)
 
     def hide_widget(self):
-        self._display_widget.setVisible(False)
+        if self._display_widget:
+            self._display_widget.setVisible(False)
 
-    def show_widget(self):
+    def show_widget(self, from_toggle=False):
+        if (not from_toggle) and (not eval(str(self.card.ivl) + UserConfig.load_when_ivl)):
+            self.destroy_dock()
+            return
         if not self.dock:
             return
+
         self._display_widget.setVisible(True)
         # list(map(lambda web: web.setVisible(True), self.webs))
         if self._first_show:
             self.web.update_btn.updator.start()
             self._first_show = False
+
         if not UserConfig.preload:
             self.start_pages()
 
-    def hide(self):
+    def destroy_dock(self):
         if self.dock:
             mw.removeDockWidget(self.dock)
             self.dock.destroy()
+
         self.dock = None
 
+    def hide(self):
+        if self.dock:
+            self.dock.setVisible(False)
+
     def show_dock(self):
-        self.dock.setVisible(True)
+        if self.dock:
+            self.dock.setVisible(True)
 
     def ensure_dock(self):
         if ProfileConfig.is_first_webq_run:
@@ -1594,14 +1616,18 @@ class WebQryAddon:
         return True
 
     def toggle(self):
-        if not self.ensure_dock():
-            return
-        if self.dock.isVisible():
-            SyncConfig.visible = False
-            self.hide()
+        if eval(str(self.card.ivl) + UserConfig.load_when_ivl):
+            if not self.ensure_dock():
+                return
+            if self.dock.isVisible():
+                SyncConfig.visible = False
+                self.hide()
+            else:
+                SyncConfig.visible = True
+                self.show_dock()
         else:
-            SyncConfig.visible = True
-            self.show_dock()
+            self.start_query(True)
+            self.show_widget(True)
 
     def on_closed(self):
         mw.progress.timer(100, self.hide, False)
