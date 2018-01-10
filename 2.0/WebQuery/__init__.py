@@ -1574,7 +1574,6 @@ class WebQryAddon:
         if self.dock:
             mw.removeDockWidget(self.dock)
             self.dock.destroy()
-
         self.dock = None
 
     def hide(self):
@@ -1626,8 +1625,12 @@ class WebQryAddon:
                 SyncConfig.visible = True
                 self.show_dock()
         else:
-            self.start_query(True)
-            self.show_widget(True)
+            if self.dock and self.dock.isVisible():
+                self.hide()
+            else:
+                self.start_query(True)
+                self.show_widget(True)
+                self.show_dock()
 
     def on_closed(self):
         mw.progress.timer(100, self.hide, False)
