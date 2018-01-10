@@ -511,8 +511,8 @@ class _Page(QWebPage):
         self.loadFinished.connect(self._on_load_finished)
 
     def userAgentForUrl(self, url):
-        return 'Mozilla/5.0 (iPhone; U; CPU like Mac OS X) ' \
-               'AppleWebKit/420.1 (KHTML, like Gecko) Version/3.0 Mobile/4A93 '
+        return "Mozilla/5.0 (iPhone; CPU iPhone OS 9_1 like Mac OS X) AppleWebKit/601.1.46 (KHTML, " \
+               "like Gecko) Version/9.0 Mobile/13B143 Safari/601.1"
 
     @property
     def provider(self):
@@ -547,13 +547,6 @@ class _Page(QWebPage):
 
         self.mainFrame().load(req)
         self._wait_load(10)
-        if self.selector:
-            html = self.mainFrame().evaluateJavaScript("$('{}').html()".format(self.selector))
-            if html:
-                self.mainFrame().setHtml(html, QUrl(url))
-                self.has_selector_contents.emit(True)
-                return
-        self.has_selector_contents.emit(False)
 
     def _events_loop(self, wait=None):
         if wait is None:
@@ -563,6 +556,16 @@ class _Page(QWebPage):
 
     def _on_load_finished(self, successful):
         self._load_status = successful
+        if successful:
+            if self.selector:
+                mf = self.mainFrame()
+                tag_cmd = u"document.querySelector('{}').outerHTML".format(self.selector)
+                tag_html = mf.evaluateJavaScript(tag_cmd)
+                if tag_html:
+                    mf.setHtml(tag_html)
+                    self.has_selector_contents.emit(True)
+                    return
+                self.has_selector_contents.emit(False)
 
     def _wait_load(self, timeout=None):
         self._events_loop(0.0)

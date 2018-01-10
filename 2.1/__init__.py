@@ -9,12 +9,12 @@ Created: 12/24/2017
 import json
 import random
 import re
+from PyQt5.QtGui import QImage
+from PyQt5.QtWebEngineWidgets import QWebEngineProfile
 from functools import partial
 from uuid import uuid4
 
 import aqt.models
-from PyQt5.QtGui import QImage
-from PyQt5.QtWebEngineWidgets import QWebEngineProfile
 from anki.hooks import addHook
 # noinspection PyArgumentList
 from anki.lang import _
@@ -406,7 +406,7 @@ class _Page(QWebEnginePage):
                 self.setHtml(html, self.get_url())
                 self.has_selector_contents.emit(True)
 
-            self.runJavaScript("$('#article').html()", found)
+            self.runJavaScript("$('{}').html()".format(self.selector), found)
             return
         self.has_selector_contents.emit(False)
 
