@@ -92,7 +92,7 @@ class _MetaConfigObj(type):
         # meta values
         setattr(meta, "config_dict", config_dict)
         setattr(meta, "__store_location__", getattr(meta, "__store_location__", 0))
-        setattr(meta, "__config_file__", getattr(meta, "__config_file__", "config.json"))
+        setattr(meta, "__config_file__", getattr(meta, "__config_file__", None))
 
         _MetaConfigObj.metas[c.__name__] = meta
         # endregion
@@ -474,7 +474,7 @@ class UserConfig:
 
     class Meta:
         __store_location__ = _MetaConfigObj.StoreLocation.MediaFolder
-        # __config_file__ = "webquery_user_cfg.json"
+        __config_file__ = "webquery_user_cfg.json"
 
     load_on_question = True
     image_quality = 50
