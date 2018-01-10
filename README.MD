@@ -53,6 +53,25 @@ In the "Options" menu open the configuration dialog:
 - **load_on_question**": change to false if you need web to be queried **/ONLY/** on answers.
 - **preload**: Query web even it's invisible.
 
+### Load on Card Interval
+Config item "load_when_ivl", defaults to ">=0", this value controls the visibility of Web Query dock widget based on current card's intervals:
+
+- New Card: "==0"
+- Review Card: ">0"
+- Mixed: ">=0"
+- Interval within 3 days: "<=3"
+
+When you're looking at the source:
+```Python
+eval(str(self.card.ivl) + UserConfig.load_when_ivl)
+```
+You can see that this actually is implemented by Python "eval" .. so you can even set the value as, 1<= interval <=10 and :
+```json
+{
+"load_when_ivl": " in range(1,10)"
+}
+```
+
 ### Provider URL
 This is an URL string you can customize in your settings. By default, 
 This addon provide a value for Wikipedia: http://en.wikipedia.org/wiki/wiki.html?search=%s
@@ -109,11 +128,6 @@ Just in case you have plenty of url providers and there must to be many tabs on 
 3. Check the visibilities for each of the provider url:
 
 ![](https://raw.githubusercontent.com/upday7/WebQuery/master/screenshots/tab_visibility_ck2.png)
-
-### Other Setting
-In the Addon setting window there more items for customization:
-- query_on_question: default = true, set to false if you need the screen window to be shown only on answer page.
-- preload: default = true, if this is true all pages in tabs will be pre-loaded regardless the visible of widgets or webs.
 
 ### More Provider URL
 <em>Speical thanks to @语言-Rahanande for collection</em>
