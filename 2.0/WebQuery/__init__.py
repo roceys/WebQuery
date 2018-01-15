@@ -749,6 +749,8 @@ class TxtOptionsMenu(QMenu):
                 fld_names
             ))
             if added_actions:
+                if selected_index not in list(range(added_actions.__len__())):
+                    selected_index = 1
                 list(map(lambda action: action.setCheckable(True), added_actions))
                 selected_action = added_actions[selected_index]
                 selected_action.setChecked(True)
@@ -1465,7 +1467,8 @@ class WebQryAddon:
             self._display_widget.setVisible(False)
             self._display_widget.setTabPosition(self._display_widget.East)
             added_web = 0
-            for i, (nm, url) in enumerate(UserConfig.provider_urls):
+            for i, (nm, url) in [(i, (n, url)) for i, (n, url) in enumerate(UserConfig.provider_urls)
+                                 if i not in self.model_hidden_tab_index]:
                 self.webs[added_web].setVisible(False)
                 if i in self.model_hidden_tab_index:
                     continue
